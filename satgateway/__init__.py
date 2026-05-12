@@ -11,7 +11,7 @@ API (3 lines):
     
     @app.get("/premium")
     @require_payment(amount_sats=100)
-    def premium_content(request: Request):
+    async def premium_content(request: Request):
         return {"secret": "data"}
 """
 

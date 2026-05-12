@@ -25,6 +25,9 @@ def require_payment(
     """
     Decorator that gates a FastAPI endpoint behind a Lightning payment.
 
+    The payment is bound to the specific route, amount, and resource URL.
+    Each paid invoice can only be used once (consumed on first successful access).
+
     Usage:
         @app.get("/api/premium")
         @require_payment(amount_sats=100, description="Access premium API")
@@ -51,15 +54,18 @@ def require_payment(
 
             # 1. Check for existing payment proof in headers or cookies
             payment_id = request.headers.get("X-Payment-ID") or request.cookies.get("sg_payment_id")
-            payment_preimage = request.headers.get("X-Payment-Preimage") or request.cookies.get("sg_preimage")
 
             if payment_id:
-                status = await _gateway.check_payment(payment_id)
-                if status.get("paid"):
-                    # Valid payment — proceed
+                # Verify: paid + correct amount + correct route + not consumed
+                verified = _gateway.verify_payment(
+                    payment_id=payment_id,
+                    expected_amount=amount_sats,
+                    resource_url=str(request.url)
+                )
+                if verified:
                     return await func(*args, **kwargs)
 
-            # 2. No valid payment — create one and return 402
+            # 2. No valid payment — create a route-bound invoice and return 402
             resource_url = str(request.url)
             desc = description or f"Access to {request.url.path}"
 
@@ -93,7 +99,14 @@ def require_payment(
                     }).encode()).decode()
                 }
             )
-            response.set_cookie(key="sg_payment_id", value=req.id, max_age=3600, httponly=True)
+            response.set_cookie(
+                key="sg_payment_id",
+                value=req.id,
+                max_age=3600,
+                httponly=True,
+                secure=True,
+                samesite="strict"
+            )
             return response
 
         return wrapper
@@ -122,13 +135,32 @@ class PaymentGateway:
     def _register_routes(self):
         @self.router.post("/invoice")
         async def create_invoice(request: Request):
-            body = await request.json()
-            req = await self.gateway.create_request(
-                amount_sats=body.get("amount_sats", 100),
-                description=body.get("description", "Service access"),
-                resource_url=body.get("resource_url", ""),
-                metadata=body.get("metadata")
-            )
+            try:
+                body = await request.json()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
+
+            amount_raw = body.get("amount_sats")
+            if amount_raw is None:
+                raise HTTPException(status_code=400, detail="amount_sats is required")
+            try:
+                amount_sats = int(amount_raw)
+            except (ValueError, TypeError):
+                raise HTTPException(status_code=400, detail="amount_sats must be an integer")
+
+            if amount_sats < 1:
+                raise HTTPException(status_code=400, detail="amount_sats must be at least 1")
+
+            try:
+                req = await self.gateway.create_request(
+                    amount_sats=amount_sats,
+                    description=body.get("description", "Service access"),
+                    resource_url=body.get("resource_url", ""),
+                    metadata=body.get("metadata")
+                )
+            except ValueError as e:
+                raise HTTPException(status_code=400, detail=str(e))
+
             return {
                 "payment_id": req.id,
                 "invoice": req.invoice,
@@ -230,28 +262,49 @@ class PaymentGateway:
                 "backend": "mock" if isinstance(self.gateway.backend, MockBackend) else "lnd"
             }
 
-
-
         @self.router.post("/analytics/track")
         async def track_event(request: Request):
-            import os, redis
-            body = await request.json()
+            try:
+                body = await request.json()
+            except Exception:
+                raise HTTPException(status_code=400, detail="Invalid JSON body")
             event = body.get("event", "unknown")
-            r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
-            r.incr(f"analytics:{event}")
-            r.incr("analytics:total_events")
+            try:
+                import redis
+                r = redis.Redis(
+                    host=os.getenv("REDIS_HOST", "redis"),
+                    port=6379,
+                    decode_responses=True,
+                    socket_connect_timeout=2,
+                    socket_timeout=2
+                )
+                r.incr(f"analytics:{event}")
+                r.incr("analytics:total_events")
+            except Exception:
+                # Redis unavailable — silently drop analytics
+                pass
             return {"ok": True}
 
         @self.router.get("/analytics/dashboard")
         async def analytics_dashboard():
-            import os, redis
-            r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
-            keys = r.keys("analytics:*")
-            data = {}
-            for k in keys:
-                val = r.get(k)
-                data[k.replace("analytics:", "")] = int(val) if val else 0
-            return {"analytics": data, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
+            try:
+                import redis
+                r = redis.Redis(
+                    host=os.getenv("REDIS_HOST", "redis"),
+                    port=6379,
+                    decode_responses=True,
+                    socket_connect_timeout=2,
+                    socket_timeout=2
+                )
+                keys = r.keys("analytics:*")
+                data = {}
+                for k in keys:
+                    val = r.get(k)
+                    data[k.replace("analytics:", "")] = int(val) if val else 0
+                return {"analytics": data, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
+            except Exception:
+                return {"analytics": {}, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
+
         @self.router.get("/status")
         async def gateway_status():
             bal = await self.gateway.get_balance()

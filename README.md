@@ -68,17 +68,17 @@ from satgateway import require_payment
 app = FastAPI()
 
 @app.get("/api/public")
-def public_route():
+async def public_route():
     return {"message": "free for everyone"}
 
 @app.get("/api/premium")
 @require_payment(amount_sats=100)
-def premium_route():
+async def premium_route(request: Request):
     return {"message": "thanks for the sats!"}
 
 @app.get("/api/tiered")
 @require_payment(amount_sats=500, description="Pro Tier")
-def pro_route():
+async def pro_route(request: Request):
     return {"data": "exclusive dataset", "expires": "24h"}
 ```
 
@@ -124,7 +124,7 @@ services:
       # Optional: connect to your LND node
       # - LND_HOST=https://lnd:8080
       # - LND_MACAROON=${LND_MACAROON}
-      # - LND_CERT_PATH=/app/lnd/tls.cert
+      # - LND_TLS_CERT_PATH=/app/lnd/tls.cert
     depends_on:
       - redis
 ```

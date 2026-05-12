@@ -96,8 +96,8 @@ def home():
     <div class="hero">
         <h1>⚡ SatGateway</h1>
         <p class="tagline">Bitcoin Lightning payments for websites & APIs.<br>Two lines of code. Sub-penny fees. No accounts.</p>
-        <a class="cta" href="#demo">Try Demo</a>
-        <a class="cta secondary" href="https://github.com/yourname/satgateway">GitHub</a>
+        <a class="cta" href="/payments/">Try Demo</a>
+        <a class="cta secondary" href="https://github.com/webcatchdev/satgateway">GitHub</a>
     </div>
 
     <div class="features">
@@ -112,7 +112,7 @@ def home():
             <p>Gate FastAPI endpoints:</p>
             <div class="code"><span class="keyword">@app.get</span>(<span class="string">"/api/premium"</span>)
 <span class="keyword">@require_payment</span>(<span class="string">amount_sats=100</span>)
-<span class="keyword">def</span> premium():
+<span class="keyword">async def</span> premium(request: Request):
     <span class="keyword">return</span> {<span class="string">"secret"</span>: <span class="string">"data"</span>}</div>
         </div>
         <div class="feature">
@@ -129,13 +129,13 @@ def home():
     </div>
 
     <footer>
-        Built with ⚡ by <a href="https://github.com/yourname" style="color:#F7931A;">@yourname</a> · MIT License
+        Built with ⚡ by <a href="https://github.com/webcatchdev" style="color:#F7931A;">@webcatchdev</a> · MIT License
     </footer>
 </body>
 </html>"""
 
 
-@app.get("/api/secret")
+@app.get("/payments/api/secret")
 @require_payment(amount_sats=100, description="Access secret message")
 async def secret_message(request: Request):
     return {
@@ -150,7 +150,7 @@ async def secret_message(request: Request):
     }
 
 
-@app.get("/api/status")
+@app.get("/payments/api/status")
 async def status():
     from satgateway.middleware import _default_gateway
     gw = _default_gateway()
@@ -171,28 +171,3 @@ async def status():
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=9026)
-
-# ---------------------------------------------------------------------------
-# Analytics
-# ---------------------------------------------------------------------------
-
-@app.post("/analytics/track")
-async def track_event(request: Request):
-    body = await request.json()
-    event = body.get("event", "unknown")
-    import redis
-    r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
-    r.incr(f"analytics:{event}")
-    r.incr("analytics:total_events")
-    return {"ok": True}
-
-@app.get("/analytics/dashboard")
-async def analytics_dashboard():
-    import redis
-    r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
-    keys = r.keys("analytics:*")
-    data = {}
-    for k in keys:
-        val = r.get(k)
-        data[k.replace("analytics:", "")] = int(val) if val else 0
-    return {"analytics": data, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}

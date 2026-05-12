@@ -26,6 +26,7 @@ class PaymentRequest:
     preimage: Optional[str] = None
     invoice: Optional[str] = None
     payment_hash: Optional[str] = None
+    consumed: bool = False
 
 
 @dataclass
@@ -152,9 +153,11 @@ class LndBackend(LightningBackend):
     async def check_payment(self, payment_hash: str):
         import aiohttp
         import base64
+        import urllib.parse
         # LND REST expects base64-encoded payment hash in URL
         ph_b64 = base64.b64encode(bytes.fromhex(payment_hash)).decode()
-        url = f"{self.host}/v1/invoice/{ph_b64}"
+        ph_b64_urlsafe = urllib.parse.quote(ph_b64, safe="")
+        url = f"{self.host}/v1/invoice/{ph_b64_urlsafe}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=self._headers, ssl=self._ssl) as resp:
                 if resp.status == 404:
@@ -198,7 +201,7 @@ class SatGateway:
 
     def __init__(self, backend: LightningBackend, config: Optional[GatewayConfig] = None):
         self.backend = backend
-        self.config = config or GatewayConfig(api_key="dev")
+        self.config = config or GatewayConfig(api_key="***")
         self._payments: Dict[str, PaymentRequest] = {}
         self._callbacks: Dict[str, Callable] = {}
 
@@ -234,7 +237,13 @@ class SatGateway:
             return {"found": False, "paid": False}
 
         if req.status == "paid":
-            return {"found": True, "paid": True, "amount_sats": req.amount_sats, "paid_at": req.paid_at.isoformat() if req.paid_at else None}
+            return {
+                "found": True,
+                "paid": True,
+                "amount_sats": req.amount_sats,
+                "paid_at": req.paid_at.isoformat() if req.paid_at else None,
+                "consumed": req.consumed
+            }
 
         if req.expires_at < datetime.now(timezone.utc):
             req.status = "expired"
@@ -254,6 +263,30 @@ class SatGateway:
             "amount_sats": req.amount_sats,
             "expires_at": req.expires_at.isoformat()
         }
+
+    def consume_payment(self, payment_id: str) -> bool:
+        """Mark a payment as consumed (one-time use). Returns True if successful."""
+        req = self._payments.get(payment_id)
+        if not req or not req.status == "paid" or req.consumed:
+            return False
+        req.consumed = True
+        return True
+
+    def verify_payment(self, payment_id: str, expected_amount: int, resource_url: str) -> bool:
+        """Verify a payment is paid, unconsumed, matches amount and resource."""
+        req = self._payments.get(payment_id)
+        if not req:
+            return False
+        if req.status != "paid":
+            return False
+        if req.consumed:
+            return False
+        if req.amount_sats != expected_amount:
+            return False
+        if req.resource_url and req.resource_url != resource_url:
+            return False
+        req.consumed = True
+        return True
 
     def on_payment(self, payment_id: str, callback: Callable):
         """Register a callback for when a payment is confirmed."""

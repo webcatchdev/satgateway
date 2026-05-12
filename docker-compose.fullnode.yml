@@ -1,6 +1,11 @@
 version: "3.8"
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: satgateway-redis
+    restart: unless-stopped
+
   bitcoind:
     image: bitcoin/bitcoin:28.0
     container_name: bitcoind
@@ -29,7 +34,7 @@ services:
     restart: unless-stopped
     ports:
       - "9735:9735"
-      - "127.0.0.1:10009:10009"
+      - "8080:8080"
     volumes:
       - ./lnd-data:/root/.lnd
       - ./lnd-fullnode.conf:/root/.lnd/lnd.conf
@@ -40,13 +45,16 @@ services:
       - bitcoind
 
   satgateway:
-    build: .
+    image: ghcr.io/webcatchdev/satgateway:latest
     container_name: satgateway
     restart: unless-stopped
     ports:
       - "9026:9026"
     environment:
-      - LND_HOST=lnd:10009
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
+      - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - REDIS_HOST=redis
+      - LND_HOST=http://lnd:8080
       - LND_MACAROON_PATH=/lnd-macaroons/admin.macaroon
       - LND_TLS_CERT_PATH=/lnd-macaroons/tls.cert
       - LND_NETWORK=mainnet
@@ -54,3 +62,4 @@ services:
       - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
     depends_on:
       - lnd
+      - redis
