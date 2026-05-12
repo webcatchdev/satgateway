@@ -50,3 +50,8 @@ Issues = "https://github.com/webcatchdev/satgateway/issues"
 [tool.setuptools.packages.find]
 where = ["."]
 include = ["satgateway*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"
+addopts = "-v --tb=short"

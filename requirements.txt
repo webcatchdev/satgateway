@@ -7,3 +7,6 @@ qrcode[pil]
 python-jose[cryptography]
 redis
 websockets
+pytest
+pytest-asyncio
+httpx

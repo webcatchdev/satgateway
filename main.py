@@ -11,6 +11,7 @@ Environment:
     LND_MACAROON          → LND macaroon hex (optional)
 """
 
+import json
 import os
 from contextlib import asynccontextmanager
 
@@ -57,10 +58,18 @@ app = FastAPI(
     lifespan=lifespan
 )
 
+# CORS — configurable via env. Default restricts to same-origin + common local dev ports.
+# For public API mode, set CORS_ORIGINS='["*"]' explicitly (not recommended for production).
+_cors_raw = os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://localhost:5173", "http://localhost:8000", "http://localhost:9026"]')
+try:
+    _cors_origins = json.loads(_cors_raw)
+except Exception:
+    _cors_origins = [x.strip() for x in _cors_raw.split(",") if x.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
+    allow_origins=_cors_origins,
+    allow_methods=["GET", "POST", "OPTIONS"],
     allow_headers=["*"]
 )
 

@@ -274,6 +274,20 @@ class PaymentGateway:
                 "backend": "mock" if isinstance(self.gateway.backend, MockBackend) else "lnd"
             }
 
+        def _redis_client():
+            import redis
+            return redis.Redis(
+                host=os.getenv("REDIS_HOST", "redis"),
+                port=int(os.getenv("REDIS_PORT", "6379")),
+                decode_responses=True,
+                socket_connect_timeout=2,
+                socket_timeout=2
+            )
+
+        def _redis_required():
+            """Return True if Redis is explicitly configured (not just default)."""
+            return os.getenv("REDIS_HOST") is not None
+
         @self.router.post("/analytics/track")
         async def track_event(request: Request):
             try:
@@ -282,18 +296,12 @@ class PaymentGateway:
                 raise HTTPException(status_code=400, detail="Invalid JSON body")
             event = body.get("event", "unknown")
             try:
-                import redis
-                r = redis.Redis(
-                    host=os.getenv("REDIS_HOST", "redis"),
-                    port=6379,
-                    decode_responses=True,
-                    socket_connect_timeout=2,
-                    socket_timeout=2
-                )
+                r = _redis_client()
                 r.incr(f"analytics:{event}")
                 r.incr("analytics:total_events")
             except Exception:
-                pass
+                if _redis_required():
+                    raise HTTPException(status_code=503, detail="Analytics backend unavailable")
             return {"ok": True}
 
         @self.router.get("/analytics/dashboard")
@@ -305,14 +313,7 @@ class PaymentGateway:
                 raise HTTPException(status_code=401, detail="Invalid or missing API key")
 
             try:
-                import redis
-                r = redis.Redis(
-                    host=os.getenv("REDIS_HOST", "redis"),
-                    port=6379,
-                    decode_responses=True,
-                    socket_connect_timeout=2,
-                    socket_timeout=2
-                )
+                r = _redis_client()
                 keys = r.keys("analytics:*")
                 data = {}
                 for k in keys:
@@ -320,6 +321,8 @@ class PaymentGateway:
                     data[k.replace("analytics:", "")] = int(val) if val else 0
                 return {"analytics": data, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
             except Exception:
+                if _redis_required():
+                    raise HTTPException(status_code=503, detail="Analytics backend unavailable")
                 return {"analytics": {}, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
 
         @self.router.get("/status")
