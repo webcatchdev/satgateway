@@ -14,11 +14,12 @@ services:
     environment:
       - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
       - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
       - REDIS_HOST=redis
       # Optional: connect to your LND node
-      # - LND_HOST=https://host.docker.internal:8080
+      # - LND_HOST=https://lnd:8080
       # - LND_MACAROON=${LND_MACAROON}
-      # - LND_CERT_PATH=/app/lnd/tls.cert
+      # - LND_TLS_CERT_PATH=/app/lnd/tls.cert
     volumes:
       - ./data:/app/data
     depends_on:

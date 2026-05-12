@@ -28,6 +28,7 @@ async def lifespan(app: FastAPI):
     # Initialize gateway on startup
     fee_bps = int(os.getenv("SATGATEWAY_FEE_BPS", "50"))
     api_key = os.getenv("SATGATEWAY_KEY", "dev")
+    db_path = os.getenv("SATGATEWAY_DB", "/app/data/satgateway.db")
 
     if os.getenv("LND_HOST"):
         backend = LndBackend(
@@ -41,7 +42,8 @@ async def lifespan(app: FastAPI):
 
     init_gateway(
         backend=backend,
-        config=GatewayConfig(api_key=api_key, fee_basis_points=fee_bps)
+        config=GatewayConfig(api_key=api_key, fee_basis_points=fee_bps),
+        db_path=db_path
     )
     gateway = PaymentGateway(sat_gateway=_default_gateway())
     app.include_router(gateway.router, prefix="/payments")
@@ -61,6 +63,8 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"]
 )
+
+app.mount("/static", StaticFiles(directory="static"), name="static")
 
 # ---------------------------------------------------------------------------
 # Demo pages
@@ -125,7 +129,7 @@ def home():
         <h2>Live Demo</h2>
         <p class="tagline">Pay 100 sats to reveal a secret message</p>
         <div id="paywall-container"></div>
-        <script src="/static/paywall.js" data-amount="100" data-resource="/api/secret" data-container="paywall-container"></script>
+        <script src="/static/paywall.js" data-amount="100" data-resource="/payments/api/secret" data-container="paywall-container"></script>
     </div>
 
     <footer>

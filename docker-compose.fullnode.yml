@@ -1,4 +1,4 @@
-version: "3.8"
+version: 3.8
 
 services:
   redis:
@@ -11,8 +11,8 @@ services:
     container_name: bitcoind
     restart: unless-stopped
     ports:
-      - "8333:8333"       # Bitcoin P2P
-      - "127.0.0.1:8332:8332"  # RPC (localhost only)
+      - 8333:8333       # Bitcoin P2P
+      - 127.0.0.1:8332:8332  # RPC (localhost only)
     volumes:
       - ./bitcoin-data:/bitcoin/.bitcoin
     command: >
@@ -33,8 +33,8 @@ services:
     container_name: lnd
     restart: unless-stopped
     ports:
-      - "9735:9735"
-      - "8080:8080"
+      - 9735:9735
+      - 8080:8080
     volumes:
       - ./lnd-data:/root/.lnd
       - ./lnd-fullnode.conf:/root/.lnd/lnd.conf
@@ -49,10 +49,11 @@ services:
     container_name: satgateway
     restart: unless-stopped
     ports:
-      - "9026:9026"
+      - 9026:9026
     environment:
       - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
       - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
       - REDIS_HOST=redis
       - LND_HOST=http://lnd:8080
       - LND_MACAROON_PATH=/lnd-macaroons/admin.macaroon
@@ -60,6 +61,7 @@ services:
       - LND_NETWORK=mainnet
     volumes:
       - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
+      - ./data:/app/data
     depends_on:
       - lnd
       - redis

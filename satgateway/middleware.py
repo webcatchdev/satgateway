@@ -28,6 +28,9 @@ def require_payment(
     The payment is bound to the specific route, amount, and resource URL.
     Each paid invoice can only be used once (consumed on first successful access).
 
+    Self-verification: the decorator calls check_payment() which verifies
+    with LND before checking scope. No polling /verify endpoint required.
+
     Usage:
         @app.get("/api/premium")
         @require_payment(amount_sats=100, description="Access premium API")
@@ -52,21 +55,30 @@ def require_payment(
             if not request:
                 raise HTTPException(status_code=500, detail="Could not find Request object")
 
+            resource_url = str(request.url)
+
             # 1. Check for existing payment proof in headers or cookies
             payment_id = request.headers.get("X-Payment-ID") or request.cookies.get("sg_payment_id")
 
             if payment_id:
-                # Verify: paid + correct amount + correct route + not consumed
-                verified = _gateway.verify_payment(
-                    payment_id=payment_id,
-                    expected_amount=amount_sats,
-                    resource_url=str(request.url)
-                )
-                if verified:
-                    return await func(*args, **kwargs)
+                # Self-verify with LND first, then check scope
+                check = await _gateway.check_payment(payment_id)
+                if check.get("paid"):
+                    req = _gateway.get_payment(payment_id)
+                    if req and req.status == "paid" and not req.consumed:
+                        if req.amount_sats == amount_sats and req.resource_url == resource_url:
+                            # Valid payment — call handler, consume on success
+                            try:
+                                result = await func(*args, **kwargs)
+                                _gateway.consume_payment(payment_id)
+                                return result
+                            except HTTPException:
+                                raise
+                            except Exception:
+                                # Don't consume if handler crashed
+                                raise HTTPException(status_code=500, detail="Internal server error")
 
             # 2. No valid payment — create a route-bound invoice and return 402
-            resource_url = str(request.url)
             desc = description or f"Access to {request.url.path}"
 
             req = await _gateway.create_request(
@@ -281,12 +293,17 @@ class PaymentGateway:
                 r.incr(f"analytics:{event}")
                 r.incr("analytics:total_events")
             except Exception:
-                # Redis unavailable — silently drop analytics
                 pass
             return {"ok": True}
 
         @self.router.get("/analytics/dashboard")
-        async def analytics_dashboard():
+        async def analytics_dashboard(request: Request):
+            # Gate with API key
+            api_key = request.headers.get("X-API-Key") or request.query_params.get("api_key")
+            expected = self.gateway.config.api_key
+            if expected and expected != "dev" and api_key != expected:
+                raise HTTPException(status_code=401, detail="Invalid or missing API key")
+
             try:
                 import redis
                 r = redis.Redis(
@@ -324,18 +341,22 @@ _default_gw: Optional[SatGateway] = None
 def _default_gateway() -> SatGateway:
     global _default_gw
     if _default_gw is None:
+        db_path = os.getenv("SATGATEWAY_DB", "/app/data/satgateway.db")
         _default_gw = SatGateway(
             backend=MockBackend(),
-            config=GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev"))
+            config=GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev")),
+            db_path=db_path
         )
     return _default_gw
 
 
-def init_gateway(backend=None, config=None):
+def init_gateway(backend=None, config=None, db_path=None):
     """Initialize the default gateway (call once at startup)."""
     global _default_gw
+    db_path = db_path or os.getenv("SATGATEWAY_DB", "/app/data/satgateway.db")
     _default_gw = SatGateway(
         backend=backend or MockBackend(),
-        config=config or GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev"))
+        config=config or GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev")),
+        db_path=db_path
     )
     return _default_gw

@@ -4,10 +4,11 @@ import os
 import json
 import uuid
 import hashlib
+import sqlite3
 import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable, Dict, Any
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, asdict
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -27,6 +28,39 @@ class PaymentRequest:
     invoice: Optional[str] = None
     payment_hash: Optional[str] = None
     consumed: bool = False
+
+    def to_dict(self) -> Dict[str, Any]:
+        return {
+            "id": self.id,
+            "amount_sats": self.amount_sats,
+            "description": self.description,
+            "resource_url": self.resource_url,
+            "expires_at": self.expires_at.isoformat(),
+            "metadata": json.dumps(self.metadata),
+            "status": self.status,
+            "paid_at": self.paid_at.isoformat() if self.paid_at else None,
+            "preimage": self.preimage,
+            "invoice": self.invoice,
+            "payment_hash": self.payment_hash,
+            "consumed": int(self.consumed)
+        }
+
+    @classmethod
+    def from_row(cls, row: sqlite3.Row) -> "PaymentRequest":
+        return cls(
+            id=row["id"],
+            amount_sats=row["amount_sats"],
+            description=row["description"],
+            resource_url=row["resource_url"],
+            expires_at=datetime.fromisoformat(row["expires_at"]),
+            metadata=json.loads(row["metadata"]) if row["metadata"] else {},
+            status=row["status"],
+            paid_at=datetime.fromisoformat(row["paid_at"]) if row["paid_at"] else None,
+            preimage=row["preimage"],
+            invoice=row["invoice"],
+            payment_hash=row["payment_hash"],
+            consumed=bool(row["consumed"])
+        )
 
 
 @dataclass
@@ -185,12 +219,84 @@ class LndBackend(LightningBackend):
 
 
 # ---------------------------------------------------------------------------
+# SQLite persistence
+# ---------------------------------------------------------------------------
+
+class PaymentStore:
+    """SQLite-backed payment storage. Survives restarts."""
+
+    def __init__(self, db_path: str = "satgateway.db"):
+        self.db_path = db_path
+        self._ensure_tables()
+
+    def _conn(self):
+        conn = sqlite3.connect(self.db_path)
+        conn.row_factory = sqlite3.Row
+        return conn
+
+    def _ensure_tables(self):
+        with self._conn() as conn:
+            conn.execute("""
+                CREATE TABLE IF NOT EXISTS payments (
+                    id TEXT PRIMARY KEY,
+                    amount_sats INTEGER NOT NULL,
+                    description TEXT NOT NULL,
+                    resource_url TEXT NOT NULL DEFAULT '',
+                    expires_at TEXT NOT NULL,
+                    metadata TEXT NOT NULL DEFAULT '{}',
+                    status TEXT NOT NULL DEFAULT 'pending',
+                    paid_at TEXT,
+                    preimage TEXT,
+                    invoice TEXT,
+                    payment_hash TEXT,
+                    consumed INTEGER NOT NULL DEFAULT 0
+                )
+            """)
+            conn.commit()
+
+    def save(self, req: PaymentRequest):
+        with self._conn() as conn:
+            conn.execute("""
+                INSERT OR REPLACE INTO payments
+                (id, amount_sats, description, resource_url, expires_at, metadata,
+                 status, paid_at, preimage, invoice, payment_hash, consumed)
+                VALUES (:id, :amount_sats, :description, :resource_url, :expires_at, :metadata,
+                        :status, :paid_at, :preimage, :invoice, :payment_hash, :consumed)
+            """, req.to_dict())
+            conn.commit()
+
+    def load(self, payment_id: str) -> Optional[PaymentRequest]:
+        with self._conn() as conn:
+            row = conn.execute("SELECT * FROM payments WHERE id = ?", (payment_id,)).fetchone()
+            return PaymentRequest.from_row(row) if row else None
+
+    def load_all(self) -> Dict[str, PaymentRequest]:
+        with self._conn() as conn:
+            rows = conn.execute("SELECT * FROM payments").fetchall()
+            return {row["id"]: PaymentRequest.from_row(row) for row in rows}
+
+    def update_status(self, payment_id: str, status: str, paid_at: Optional[str] = None, preimage: Optional[str] = None):
+        with self._conn() as conn:
+            conn.execute(
+                "UPDATE payments SET status = ?, paid_at = ?, preimage = ? WHERE id = ?",
+                (status, paid_at, preimage, payment_id)
+            )
+            conn.commit()
+
+    def consume(self, payment_id: str) -> bool:
+        with self._conn() as conn:
+            cur = conn.execute("UPDATE payments SET consumed = 1 WHERE id = ? AND consumed = 0", (payment_id,))
+            conn.commit()
+            return cur.rowcount > 0
+
+
+# ---------------------------------------------------------------------------
 # Main engine
 # ---------------------------------------------------------------------------
 
 class SatGateway:
     """
-    SatGateway payment engine.
+    SatGateway payment engine with SQLite persistence.
 
     Usage:
         gateway = SatGateway(backend=MockBackend())
@@ -199,10 +305,13 @@ class SatGateway:
         status = await gateway.check_payment(req.id)
     """
 
-    def __init__(self, backend: LightningBackend, config: Optional[GatewayConfig] = None):
+    def __init__(self, backend: LightningBackend, config: Optional[GatewayConfig] = None,
+                 db_path: Optional[str] = None):
         self.backend = backend
         self.config = config or GatewayConfig(api_key="***")
-        self._payments: Dict[str, PaymentRequest] = {}
+        db_path = db_path or os.getenv("SATGATEWAY_DB", "satgateway.db")
+        self.store = PaymentStore(db_path)
+        self._payments: Dict[str, PaymentRequest] = self.store.load_all()
         self._callbacks: Dict[str, Callable] = {}
 
     async def create_request(
@@ -229,12 +338,17 @@ class SatGateway:
             payment_hash=inv_data.get("payment_hash")
         )
         self._payments[req.id] = req
+        self.store.save(req)
         return req
 
     async def check_payment(self, payment_id: str) -> Dict[str, Any]:
         req = self._payments.get(payment_id)
         if not req:
-            return {"found": False, "paid": False}
+            req = self.store.load(payment_id)
+            if req:
+                self._payments[payment_id] = req
+            else:
+                return {"found": False, "paid": False}
 
         if req.status == "paid":
             return {
@@ -247,14 +361,26 @@ class SatGateway:
 
         if req.expires_at < datetime.now(timezone.utc):
             req.status = "expired"
+            self.store.update_status(req.id, "expired")
             return {"found": True, "paid": False, "expired": True}
 
         result = await self.backend.check_payment(req.payment_hash or "")
 
         if result["paid"]:
+            # Validate amount paid matches expected
+            amount_paid = result.get("amount_paid", 0)
+            if amount_paid < req.amount_sats:
+                return {
+                    "found": True,
+                    "paid": False,
+                    "error": f"Underpayment: expected {req.amount_sats} sats, got {amount_paid}",
+                    "amount_sats": req.amount_sats
+                }
+
             req.status = "paid"
             req.paid_at = datetime.now(timezone.utc)
             req.preimage = result.get("preimage")
+            self.store.update_status(req.id, "paid", req.paid_at.isoformat(), req.preimage)
             self._trigger_callback(req)
 
         return {
@@ -267,25 +393,31 @@ class SatGateway:
     def consume_payment(self, payment_id: str) -> bool:
         """Mark a payment as consumed (one-time use). Returns True if successful."""
         req = self._payments.get(payment_id)
-        if not req or not req.status == "paid" or req.consumed:
+        if not req or req.status != "paid" or req.consumed:
             return False
-        req.consumed = True
-        return True
+        if self.store.consume(payment_id):
+            req.consumed = True
+            return True
+        return False
 
     def verify_payment(self, payment_id: str, expected_amount: int, resource_url: str) -> bool:
         """Verify a payment is paid, unconsumed, matches amount and resource."""
         req = self._payments.get(payment_id)
         if not req:
-            return False
+            req = self.store.load(payment_id)
+            if req:
+                self._payments[payment_id] = req
+            else:
+                return False
         if req.status != "paid":
             return False
         if req.consumed:
             return False
         if req.amount_sats != expected_amount:
             return False
-        if req.resource_url and req.resource_url != resource_url:
+        # Always require resource_url match — no wildcard invoices
+        if req.resource_url != resource_url:
             return False
-        req.consumed = True
         return True
 
     def on_payment(self, payment_id: str, callback: Callable):
@@ -301,7 +433,12 @@ class SatGateway:
                 pass
 
     def get_payment(self, payment_id: str) -> Optional[PaymentRequest]:
-        return self._payments.get(payment_id)
+        req = self._payments.get(payment_id)
+        if not req:
+            req = self.store.load(payment_id)
+            if req:
+                self._payments[payment_id] = req
+        return req
 
     async def get_balance(self) -> int:
         return await self.backend.get_balance()

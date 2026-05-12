@@ -4,9 +4,9 @@ services:
     container_name: lnd
     restart: unless-stopped
     ports:
-      - "9735:9735"
-      - "127.0.0.1:10009:10009"
-      - "127.0.0.1:8080:8080"
+      - 9735:9735
+      - 127.0.0.1:10009:10009
+      - 127.0.0.1:8080:8080
     volumes:
       - ./lnd-neutrino.conf:/root/.lnd/lnd.conf
       - lnd-data:/root/.lnd
@@ -22,13 +22,17 @@ services:
     container_name: satgateway
     restart: unless-stopped
     ports:
-      - "127.0.0.1:9026:9026"
+      - 127.0.0.1:9026:9026
     environment:
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
+      - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
+      - REDIS_HOST=redis
       - LND_HOST=https://lnd:8080
       - LND_MACAROON_PATH=/app/admin.macaroon
-      - REDIS_HOST=redis
     volumes:
       - /opt/satgateway-secrets/lnd/admin.macaroon:/app/admin.macaroon:ro
+      - ./data:/app/data
       - ./static:/app/static
     depends_on:
       - lnd

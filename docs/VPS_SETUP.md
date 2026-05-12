@@ -16,18 +16,18 @@ For Full Node (Path C): You need at least 800GB SSD. Hetzner CPX31 (€12, 4 vCP
 ### Option 1: Voltage.cloud
 1. Sign up at [voltage.cloud](https://voltage.cloud)
 2. Create a node (Testnet first, then Mainnet)
-3. Get your **gRPC endpoint**, **macaroon** (hex), and **TLS cert**
+3. Get your **REST endpoint** (e.g. `https://your-node.voltageapp.io`), **macaroon** (hex), and **TLS cert**
 4. Set these env vars in SatGateway:
    ```bash
-   LND_HOST=your-node.voltageapp.io:10009
+   LND_HOST=https://your-node.voltageapp.io
    LND_MACAROON=<hex_macaroon>
-   LND_TLS_CERT=<base64_cert>
+   LND_TLS_CERT_PATH=/app/lnd/tls.cert
    ```
 
 ### Option 2: Alby (Free tier available)
 1. Get an Alby account + wallet at [getalby.com](https://getalby.com)
 2. Use their **Developer Dashboard** → create an API key
-3. SatGateway would need a small adapter (Alby uses REST, not gRPC)
+3. SatGateway would need a small adapter (Alby uses REST, not LND native)
 
 **Best for:** Getting to market fast, testing demand.
 **Downside:** You're dependent on their uptime. Fees are higher.
@@ -70,7 +70,7 @@ services:
     restart: unless-stopped
     ports:
       - "9735:9735"       # P2P Lightning
-      - "10009:10009"     # gRPC API
+      - "8080:8080"       # REST API
     volumes:
       - ./lnd-data:/root/.lnd
       - ./lnd-neutrino.conf:/root/.lnd/lnd.conf
@@ -85,12 +85,17 @@ services:
     ports:
       - "9026:9026"
     environment:
-      - LND_HOST=lnd:10009
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
+      - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
+      - REDIS_HOST=redis
+      - LND_HOST=http://lnd:8080
       - LND_MACAROON_PATH=/lnd-macaroons/admin.macaroon
       - LND_TLS_CERT_PATH=/lnd-macaroons/tls.cert
       - LND_NETWORK=mainnet
     volumes:
       - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
+      - ./data:/app/data
     depends_on:
       - lnd
 ```
@@ -99,7 +104,7 @@ services:
 ```ini
 [Application Options]
 listen=0.0.0.0:9735
-rpclisten=0.0.0.0:10009
+restlisten=0.0.0.0:8080
 tlsautorefresh=true
 
 [Bitcoin]
@@ -149,7 +154,7 @@ To receive payments, you need **inbound liquidity**:
 ```bash
 # On your VPS, SatGateway auto-connects via docker network
 # From your local dev machine, test the API:
-curl https://your-vps-ip:9026/api/status
+curl https://your-vps-ip:9026/payments/api/status
 ```
 
 ---
@@ -163,6 +168,11 @@ Use this when you're doing serious volume and want zero trust.
 version: "3.8"
 
 services:
+  redis:
+    image: redis:7-alpine
+    container_name: satgateway-redis
+    restart: unless-stopped
+
   bitcoind:
     image: bitcoin/bitcoin:28.0
     container_name: bitcoind
@@ -191,7 +201,7 @@ services:
     restart: unless-stopped
     ports:
       - "9735:9735"
-      - "127.0.0.1:10009:10009"
+      - "8080:8080"
     volumes:
       - ./lnd-data:/root/.lnd
       - ./lnd-fullnode.conf:/root/.lnd/lnd.conf
@@ -202,27 +212,33 @@ services:
       - bitcoind
 
   satgateway:
-    build: .
+    image: ghcr.io/webcatchdev/satgateway:latest
     container_name: satgateway
     restart: unless-stopped
     ports:
       - "9026:9026"
     environment:
-      - LND_HOST=lnd:10009
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
+      - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
+      - REDIS_HOST=redis
+      - LND_HOST=http://lnd:8080
       - LND_MACAROON_PATH=/lnd-macaroons/admin.macaroon
       - LND_TLS_CERT_PATH=/lnd-macaroons/tls.cert
       - LND_NETWORK=mainnet
     volumes:
       - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
+      - ./data:/app/data
     depends_on:
       - lnd
+      - redis
 ```
 
 **lnd-fullnode.conf**
 ```ini
 [Application Options]
 listen=0.0.0.0:9735
-rpclisten=0.0.0.0:10009
+restlisten=0.0.0.0:8080
 tlsautorefresh=true
 
 [Bitcoin]

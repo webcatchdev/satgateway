@@ -23,7 +23,7 @@ curl https://webcatch.dev/payments/api/status
 # Create a 21-sat invoice for the secret endpoint
 curl -X POST https://webcatch.dev/payments/invoice \
   -H "Content-Type: application/json" \
-  -d '{"amount_sats": 21, "description": "secret access", "resource_url": "/api/secret"}'
+  -d '{"amount_sats": 21, "description": "secret access", "resource_url": "/payments/api/secret"}'
 
 # Get a QR code for that invoice (replace <payment_id> with the id from above)
 curl https://webcatch.dev/payments/qr/<payment_id>
@@ -32,7 +32,7 @@ curl https://webcatch.dev/payments/qr/<payment_id>
 curl https://webcatch.dev/payments/verify/<payment_id>
 
 # Once paid, access the paywalled content
-curl -H "X-Payment-Id: <payment_id>" https://webcatch.dev/payments/api/secret
+curl -H "X-Payment-ID: <payment_id>" https://webcatch.dev/payments/api/secret
 ```
 
 Node Pubkey: `0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e`
@@ -62,7 +62,7 @@ That's it. The gateway is live at `http://localhost:9026`.
 SatGateway's entire API surface is one import and one decorator:
 
 ```python
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from satgateway import require_payment
 
 app = FastAPI()
@@ -85,7 +85,7 @@ async def pro_route(request: Request):
 What happens under the hood:
 1. User hits `/api/premium` without paying → `402 Payment Required` with invoice payload
 2. User pays the Lightning invoice
-3. User re-requests with `X-Payment-Id: <payment_id>` → gets the content
+3. User re-requests with `X-Payment-ID: <payment_id>` → gets the content
 
 No boilerplate. No webhook juggling. Just sats.
 
@@ -120,11 +120,14 @@ services:
     environment:
       - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
       - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
+      - SATGATEWAY_DB=/app/data/satgateway.db
       - REDIS_HOST=redis
       # Optional: connect to your LND node
       # - LND_HOST=https://lnd:8080
       # - LND_MACAROON=${LND_MACAROON}
       # - LND_TLS_CERT_PATH=/app/lnd/tls.cert
+    volumes:
+      - ./data:/app/data
     depends_on:
       - redis
 ```
@@ -145,17 +148,15 @@ satgateway/
 ├── satgateway/
 │   ├── __init__.py
 │   ├── middleware.py     # @require_payment + PaymentGateway router
-│   ├── core.py           # SatGateway, backends, models
-│   └── backends/
-│       ├── base.py
-│       ├── lnd.py        # LND REST backend
-│       └── mock.py       # Dev/test backend
+│   └── core.py           # SatGateway, backends, models, SQLite store
 ├── static/
-│   └── landing/          # Demo landing page
+│   ├── paywall.js
+│   └── landing/
 ├── main.py               # FastAPI entry point
-├── tests/
 ├── Dockerfile
 ├── docker-compose.yml
+├── docker-compose.neutrino.yml
+├── docker-compose.fullnode.yml
 └── README.md
 ```
 
