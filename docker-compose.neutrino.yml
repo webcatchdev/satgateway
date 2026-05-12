@@ -28,7 +28,7 @@ services:
       - LND_MACAROON_PATH=/app/admin.macaroon
       - REDIS_HOST=redis
     volumes:
-      - ./admin.macaroon:/app/admin.macaroon:ro
+      - /opt/satgateway-secrets/lnd/admin.macaroon:/app/admin.macaroon:ro
       - ./static:/app/static
     depends_on:
       - lnd

@@ -2,16 +2,22 @@
 # Install Caddy: https://caddyserver.com/docs/install
 # Then run: caddy run --config Caddyfile
 
-webcatch.dev {
-    reverse_proxy localhost:9026
+your-domain.com {
+    # SatGateway landing page
+    handle /payments {
+        redir /payments/ permanent
+    }
+    handle /payments/ {
+        root * /opt/satgateway/static/landing
+        file_server
+        try_files {path} /index.html
+    }
 
-    # Optional: basic rate limiting
-    # Install caddy-rate-limit module first
-    # rate_limit {
-    #     zone static_example {
-    #         key static
-    #         events 100
-    #         window 1m
-    #     }
-    # }
+    # SatGateway API — preserve /payments prefix for FastAPI router
+    handle /payments/* {
+        reverse_proxy localhost:9026
+    }
+
+    # Proxy everything else to your main app
+    reverse_proxy localhost:8080
 }

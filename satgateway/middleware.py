@@ -79,8 +79,8 @@ def require_payment(
                     "description": req.description,
                     "invoice": req.invoice,
                     "expires_at": req.expires_at.isoformat(),
-                    "qr_url": f"/satgateway/qr/{req.id}",
-                    "verify_url": f"/satgateway/verify/{req.id}"
+                    "qr_url": f"/payments/qr/{req.id}",
+                    "verify_url": f"/payments/verify/{req.id}"
                 },
                 headers={
                     "PAYMENT-REQUIRED": base64.b64encode(json.dumps({
@@ -217,6 +217,41 @@ class PaymentGateway:
 </html>"""
             return HTMLResponse(content=html)
 
+        @self.router.get("/api/status")
+        async def api_status():
+            from .core import MockBackend
+            bal = await self.gateway.get_balance()
+            return {
+                "status": "ok",
+                "gateway": "SatGateway",
+                "version": "0.1.0",
+                "balance_sats": bal,
+                "fee_bps": self.gateway.config.fee_basis_points,
+                "backend": "mock" if isinstance(self.gateway.backend, MockBackend) else "lnd"
+            }
+
+
+
+        @self.router.post("/analytics/track")
+        async def track_event(request: Request):
+            import os, redis
+            body = await request.json()
+            event = body.get("event", "unknown")
+            r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
+            r.incr(f"analytics:{event}")
+            r.incr("analytics:total_events")
+            return {"ok": True}
+
+        @self.router.get("/analytics/dashboard")
+        async def analytics_dashboard():
+            import os, redis
+            r = redis.Redis(host=os.getenv("REDIS_HOST", "redis"), port=6379, decode_responses=True)
+            keys = r.keys("analytics:*")
+            data = {}
+            for k in keys:
+                val = r.get(k)
+                data[k.replace("analytics:", "")] = int(val) if val else 0
+            return {"analytics": data, "node": "0301e382e103585adc5b3bd302e73be4e2f9ca44efe00a8f4c1aef075899ea160e"}
         @self.router.get("/status")
         async def gateway_status():
             bal = await self.gateway.get_balance()

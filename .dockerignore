@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+.env
+.env.local
+*.egg-info/
+dist/
+build/
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+
+# Secrets (never bake into image)
+*.macaroon
+*.seed
+*.cert
+*.log
+lnd-data/
+admin.macaroon/
+WALLET_BACKUP.txt

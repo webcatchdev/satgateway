@@ -430,7 +430,7 @@ async function startDemo() {
   track('demo_clicks');
 
   try {
-    const res = await fetch(API_BASE + '/payments/invoice', {
+    const res = await fetch(API_BASE + '/invoice', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ amount_sats: 1, description: 'Demo secret message' })
@@ -448,7 +448,7 @@ async function startDemo() {
     }
 
     qr.style.display = 'flex';
-    document.getElementById('qr-img').src = API_BASE + data.qr_url;
+    document.getElementById('qr-img').src = data.qr_url;
 
     invStr.style.display = 'block';
     invStr.textContent = data.invoice;
@@ -457,7 +457,7 @@ async function startDemo() {
     status.innerHTML = '<span class="status-pill status-waiting">⏳ Waiting for payment</span>';
 
     pollInterval = setInterval(async () => {
-      const vRes = await fetch(API_BASE + data.verify_url);
+      const vRes = await fetch(data.verify_url);
       const vData = await vRes.json();
       if (vData.paid) {
         clearInterval(pollInterval);
