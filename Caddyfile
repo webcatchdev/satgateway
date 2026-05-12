@@ -1,0 +1,17 @@
+# Caddy reverse proxy for SatGateway
+# Install Caddy: https://caddyserver.com/docs/install
+# Then run: caddy run --config Caddyfile
+
+webcatch.dev {
+    reverse_proxy localhost:9026
+
+    # Optional: basic rate limiting
+    # Install caddy-rate-limit module first
+    # rate_limit {
+    #     zone static_example {
+    #         key static
+    #         events 100
+    #         window 1m
+    #     }
+    # }
+}

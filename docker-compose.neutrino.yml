@@ -1,0 +1,45 @@
+services:
+  lnd:
+    image: lightninglabs/lnd:v0.18.0-beta
+    container_name: lnd
+    restart: unless-stopped
+    ports:
+      - "9735:9735"
+      - "127.0.0.1:10009:10009"
+      - "127.0.0.1:8080:8080"
+    volumes:
+      - ./lnd-neutrino.conf:/root/.lnd/lnd.conf
+      - lnd-data:/root/.lnd
+      - ./.wallet_pass:/root/.lnd/.wallet_pass:ro
+    command: >
+      lnd
+      --configfile=/root/.lnd/lnd.conf
+      --feeurl=https://nodes.lightning.computer/fees/v1/btc-fee-estimates.json
+      --wallet-unlock-password-file=/root/.lnd/.wallet_pass
+
+  satgateway:
+    build: .
+    container_name: satgateway
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:9026:9026"
+    environment:
+      - LND_HOST=https://lnd:8080
+      - LND_MACAROON_PATH=/app/admin.macaroon
+      - REDIS_HOST=redis
+    volumes:
+      - ./admin.macaroon:/app/admin.macaroon:ro
+      - ./static:/app/static
+    depends_on:
+      - lnd
+
+  redis:
+    image: redis:7-alpine
+    container_name: redis
+    restart: unless-stopped
+    volumes:
+      - redis-data:/data
+
+volumes:
+  lnd-data:
+  redis-data:

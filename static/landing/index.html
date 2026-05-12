@@ -1,0 +1,492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SatGateway — Lightning payments for any API</title>
+<style>
+  :root {
+    --bg: #0b0c10;
+    --bg2: #1f2833;
+    --fg: #c5c6c7;
+    --accent: #66fcf1;
+    --accent2: #45a29e;
+    --red: #ff6b6b;
+    --green: #51cf66;
+    --font: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    --mono: 'SF Mono', 'Fira Code', 'Consolas', monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html { scroll-behavior: smooth; }
+  body {
+    font-family: var(--font);
+    background: var(--bg);
+    color: var(--fg);
+    line-height: 1.6;
+  }
+  a { color: var(--accent); text-decoration: none; }
+  a:hover { text-decoration: underline; }
+  .container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+  header {
+    padding: 48px 0 32px;
+    text-align: center;
+    border-bottom: 1px solid var(--bg2);
+  }
+  .logo {
+    font-size: 2.5rem;
+    font-weight: 800;
+    letter-spacing: -1px;
+    color: var(--accent);
+  }
+  .tagline {
+    font-size: 1.15rem;
+    color: var(--fg);
+    margin-top: 8px;
+    opacity: 0.8;
+  }
+  .badges {
+    margin-top: 20px;
+    display: flex;
+    justify-content: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .badge {
+    background: var(--bg2);
+    padding: 4px 12px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-family: var(--mono);
+    border: 1px solid #333;
+  }
+
+  .hero {
+    padding: 64px 0 48px;
+    text-align: center;
+  }
+  .hero h1 {
+    font-size: 2.4rem;
+    font-weight: 800;
+    line-height: 1.2;
+    color: #fff;
+  }
+  .hero h1 span { color: var(--accent); }
+  .hero p {
+    font-size: 1.1rem;
+    margin-top: 16px;
+    max-width: 560px;
+    margin-left: auto;
+    margin-right: auto;
+    opacity: 0.85;
+  }
+  .cta-row {
+    margin-top: 32px;
+    display: flex;
+    justify-content: center;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    display: inline-block;
+    padding: 12px 28px;
+    border-radius: 8px;
+    font-weight: 600;
+    font-size: 0.95rem;
+    cursor: pointer;
+    border: none;
+    transition: transform 0.15s, opacity 0.15s;
+  }
+  .btn:hover { transform: translateY(-1px); opacity: 0.9; }
+  .btn-primary { background: var(--accent); color: var(--bg); }
+  .btn-secondary { background: var(--bg2); color: var(--fg); border: 1px solid #333; }
+
+  section { padding: 56px 0; }
+  h2 {
+    font-size: 1.6rem;
+    color: #fff;
+    margin-bottom: 24px;
+    text-align: center;
+  }
+  .subtitle {
+    text-align: center;
+    opacity: 0.7;
+    margin-top: -16px;
+    margin-bottom: 32px;
+  }
+
+  .demo-box {
+    background: var(--bg2);
+    border: 1px solid #333;
+    border-radius: 12px;
+    padding: 28px;
+    max-width: 520px;
+    margin: 0 auto;
+    text-align: center;
+  }
+  .demo-box h3 { color: #fff; margin-bottom: 8px; }
+  .demo-box p { font-size: 0.9rem; opacity: 0.7; margin-bottom: 20px; }
+  #qr-container {
+    margin: 20px auto;
+    width: 200px;
+    height: 200px;
+    background: #fff;
+    border-radius: 8px;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  #qr-container img { max-width: 180px; max-height: 180px; }
+  #invoice-str {
+    font-family: var(--mono);
+    font-size: 0.75rem;
+    background: var(--bg);
+    padding: 10px;
+    border-radius: 6px;
+    word-break: break-all;
+    margin-top: 12px;
+    display: none;
+    text-align: left;
+    border: 1px solid #333;
+  }
+  .status-pill {
+    display: inline-block;
+    padding: 4px 14px;
+    border-radius: 20px;
+    font-size: 0.8rem;
+    font-weight: 600;
+    margin-top: 12px;
+  }
+  .status-waiting { background: #332; color: #ffd43b; }
+  .status-paid { background: #1a3; color: #fff; }
+
+  pre {
+    background: var(--bg2);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 20px;
+    overflow-x: auto;
+    font-family: var(--mono);
+    font-size: 0.85rem;
+    line-height: 1.5;
+  }
+  code { font-family: var(--mono); }
+  .keyword { color: #c678dd; }
+  .decorator { color: #e5c07b; }
+  .string { color: #98c379; }
+  .comment { color: #5c6370; font-style: italic; }
+  .func { color: #61afef; }
+
+  .grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+    gap: 24px;
+    margin-top: 24px;
+  }
+  .card {
+    background: var(--bg2);
+    border: 1px solid #333;
+    border-radius: 10px;
+    padding: 24px;
+    transition: border-color 0.2s;
+  }
+  .card:hover { border-color: var(--accent2); }
+  .card h3 { color: var(--accent); font-size: 1.05rem; margin-bottom: 8px; }
+  .card p { font-size: 0.9rem; opacity: 0.8; }
+
+  .terminal {
+    background: #111;
+    border-radius: 10px;
+    border: 1px solid #333;
+    overflow: hidden;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+  .term-header {
+    background: #222;
+    padding: 8px 16px;
+    font-size: 0.75rem;
+    color: #888;
+    display: flex;
+    gap: 6px;
+  }
+  .dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; }
+  .dot-r { background: var(--red); }
+  .dot-y { background: #ffd43b; }
+  .dot-g { background: var(--green); }
+  .term-body {
+    padding: 16px 20px;
+    font-family: var(--mono);
+    font-size: 0.82rem;
+    line-height: 1.6;
+    color: #ddd;
+  }
+  .term-body .cmd { color: var(--accent); }
+  .term-body .out { color: #888; }
+
+  footer {
+    text-align: center;
+    padding: 48px 0;
+    border-top: 1px solid var(--bg2);
+    font-size: 0.85rem;
+    opacity: 0.6;
+  }
+  footer a { margin: 0 10px; }
+
+  @media (max-width: 600px) {
+    .hero h1 { font-size: 1.7rem; }
+    .logo { font-size: 2rem; }
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="container">
+    <div class="logo">⚡ SatGateway</div>
+    <div class="tagline">Bitcoin Lightning payments for any API or website</div>
+    <div class="badges">
+      <span class="badge">self-hosted</span>
+      <span class="badge">non-custodial</span>
+      <span class="badge">FastAPI</span>
+      <span class="badge">mainnet</span>
+    </div>
+  </div>
+</header>
+
+<section class="hero">
+  <div class="container">
+    <h1>One decorator.<br><span>Real Bitcoin payments.</span></h1>
+    <p>Add <code>@require_payment(amount_sats=100)</code> to any API endpoint. Your users pay over Lightning. You get sats. No Stripe. No KYC. No monthly fees.</p>
+    <div class="cta-row">
+      <a href="#demo" class="btn btn-primary">Try Live Demo</a>
+      <a href="https://github.com/webcatchdev/satgateway" class="btn btn-secondary">GitHub →</a>
+    </div>
+  </div>
+</section>
+
+<section id="demo">
+  <div class="container">
+    <h2>🧪 Live Demo</h2>
+    <p class="subtitle">Pay 1 sat to reveal a secret message. Scan the QR code with any Lightning wallet.</p>
+    <div class="demo-box">
+      <h3>Secret Message</h3>
+      <p>Unlock with 1 satoshi via Lightning</p>
+      <button class="btn btn-primary" id="pay-btn" onclick="startDemo()">⚡ Pay 1 Sat</button>
+      <div id="qr-container"><img id="qr-img" src="" alt="Lightning QR"></div>
+      <div id="invoice-str"></div>
+      <div id="status"></div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>💻 As Simple As This</h2>
+    <pre><code><span class="keyword">from</span> satgateway.middleware <span class="keyword">import</span> require_payment
+
+<span class="decorator">@require_payment</span>(amount_sats=<span class="string">100</span>, description=<span class="string">"Access premium API"</span>)
+<span class="keyword">async def</span> <span class="func">premium_endpoint</span>(request):
+    <span class="keyword">return</span> {<span class="string">"data"</span>: <span class="string">"secret sauce"</span>}</code></pre>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>🚀 Quick Start</h2>
+    <div class="terminal">
+      <div class="term-header">
+        <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+        <span style="margin-left:8px">bash</span>
+      </div>
+      <div class="term-body">
+<span class="cmd">$ git clone https://github.com/webcatchdev/satgateway.git && cd satgateway</span>
+<span class="cmd">$ cp .env.example .env</span>   <span class="comment"># Add your LND credentials</span>
+<span class="cmd">$ docker compose up -d</span>
+
+<span class="out">[+] Running 3/3</span>
+<span class="out"> ✔ Container lnd        Started</span>
+<span class="out"> ✔ Container redis      Started</span>
+<span class="out"> ✔ Container satgateway Started</span>
+
+<span class="cmd">$ curl http://localhost:9026/api/status</span>
+<span class="out">{"status":"ok","backend":"lnd","balance_sats":92580}</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>✨ Why SatGateway?</h2>
+    <div class="grid">
+      <div class="card">
+        <h3>🛡️ Non-Custodial</h3>
+        <p>You hold the keys. Your node, your sats. No third-party ever touches your funds.</p>
+      </div>
+      <div class="card">
+        <h3>🏠 Self-Hosted</h3>
+        <p>Runs on a $5 VPS. No platform fees, no rate limits, no vendor lock-in.</p>
+      </div>
+      <div class="card">
+        <h3>⚡ Lightning-Native</h3>
+        <p>Micro-payments from 1 sat. Instant settlement. No chargebacks. Global.</p>
+      </div>
+      <div class="card">
+        <h3>🔌 Framework Agnostic</h3>
+        <p>Built on FastAPI but the pattern works anywhere. Decorator, middleware, or manual.</p>
+      </div>
+      <div class="card">
+        <h3>📊 Built-in Analytics</h3>
+        <p>Track revenue, conversion rates, and payment flows out of the box.</p>
+      </div>
+      <div class="card">
+        <h3>🧪 Dev Mode</h3>
+        <p>Mock backend auto-pays invoices for local development. No testnet needed.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>📡 API Reference</h2>
+    <pre><code><span class="comment"># Create an invoice</span>
+<span class="cmd">POST /payments/invoice</span>
+Body: {<span class="string">"amount_sats"</span>: <span class="string">100</span>, <span class="string">"description"</span>: <span class="string">"API access"</span>}
+
+<span class="comment"># Check payment status</span>
+<span class="cmd">GET /payments/verify/{payment_id}</span>
+
+<span class="comment"># Get QR code PNG</span>
+<span class="cmd">GET /payments/qr/{payment_id}</span>
+
+<span class="comment"># Gateway health</span>
+<span class="cmd">GET /api/status</span></code></pre>
+  </div>
+</section>
+
+<section>
+  <div class="container">
+    <h2>🏗️ Self-Host in 60 Seconds</h2>
+    <div class="terminal">
+      <div class="term-header">
+        <span class="dot dot-r"></span><span class="dot dot-y"></span><span class="dot dot-g"></span>
+        <span style="margin-left:8px">docker-compose.yml</span>
+      </div>
+      <div class="term-body" style="font-size:0.78rem">
+<span class="keyword">services:</span>
+  <span class="func">satgateway:</span>
+    <span class="func">image:</span> ghcr.io/webcatchdev/satgateway:latest
+    <span class="func">environment:</span>
+      - <span class="string">LND_HOST=https://lnd:8080</span>
+      - <span class="string">LND_MACAROON_PATH=/app/admin.macaroon</span>
+      - <span class="string">REDIS_HOST=redis</span>
+    <span class="func">ports:</span>
+      - <span class="string">"9026:9026"</span>
+      </div>
+    </div>
+    <div class="cta-row" style="margin-top:28px">
+      <a href="https://github.com/webcatchdev/satgateway" class="btn btn-primary">Read Full Docs →</a>
+    </div>
+  </div>
+</section>
+
+<footer>
+  <div class="container">
+    <p>
+      <a href="https://github.com/webcatchdev/satgateway">GitHub</a>
+      <a href="https://webcatch.dev/payments/api/status">Status</a>
+      <a href="https://github.com/webcatchdev/satgateway/issues">Issues</a>
+    </p>
+    <p style="margin-top:12px">SatGateway · MIT License · Node: 0301e38...ea160e</p>
+  </div>
+</footer>
+
+<script>
+const API_BASE = '/payments';
+let pollInterval = null;
+
+function track(event) {
+  fetch(API_BASE + '/analytics/track', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ event: event })
+  }).catch(() => {});
+}
+
+track('pageviews:landing');
+
+async function startDemo() {
+  const btn = document.getElementById('pay-btn');
+  const qr = document.getElementById('qr-container');
+  const invStr = document.getElementById('invoice-str');
+  const status = document.getElementById('status');
+
+  btn.disabled = true;
+  btn.textContent = 'Creating invoice...';
+  status.innerHTML = '';
+
+  track('demo_clicks');
+
+  try {
+    const res = await fetch(API_BASE + '/payments/invoice', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ amount_sats: 1, description: 'Demo secret message' })
+    });
+
+    if (!res.ok) {
+      const text = await res.text();
+      throw new Error('Server error: ' + res.status + ' ' + text);
+    }
+
+    const data = await res.json();
+
+    if (!data.payment_id) {
+      throw new Error('No payment_id in response');
+    }
+
+    qr.style.display = 'flex';
+    document.getElementById('qr-img').src = API_BASE + data.qr_url;
+
+    invStr.style.display = 'block';
+    invStr.textContent = data.invoice;
+
+    btn.textContent = 'Waiting for payment...';
+    status.innerHTML = '<span class="status-pill status-waiting">⏳ Waiting for payment</span>';
+
+    pollInterval = setInterval(async () => {
+      const vRes = await fetch(API_BASE + data.verify_url);
+      const vData = await vRes.json();
+      if (vData.paid) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        track('demo_paid');
+        status.innerHTML = '<span class="status-pill status-paid">✅ Paid! Secret: "SatGateway is alive on mainnet ⚡"</span>';
+        btn.textContent = '⚡ Paid — Thank You!';
+        btn.disabled = false;
+      }
+    }, 3000);
+
+    setTimeout(() => {
+      if (pollInterval) {
+        clearInterval(pollInterval);
+        pollInterval = null;
+        status.innerHTML = '<span class="status-pill status-waiting">⏱️ Expired</span>';
+        btn.textContent = '⚡ Try Again';
+        btn.disabled = false;
+      }
+    }, 300000);
+
+  } catch (e) {
+    btn.textContent = 'Error — Try Again';
+    btn.disabled = false;
+    status.innerHTML = '<span style="color:#ff6b6b">' + e.message + '</span>';
+    console.error(e);
+  }
+}
+</script>
+
+</body>
+</html>

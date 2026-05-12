@@ -1,0 +1,23 @@
+__pycache__/
+*.pyc
+.env
+.env.local
+*.egg-info/
+dist/
+build/
+*.db
+*.sqlite
+*.sqlite3
+.DS_Store
+
+# Secrets & sensitive files (never commit)
+*.log
+*.macaroon
+*.seed
+*.cert
+WALLET_BACKUP.txt
+lnd-data/
+deposit.log
+
+# Keep examples clean
+*.local
