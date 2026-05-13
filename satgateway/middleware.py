@@ -4,25 +4,93 @@ import os
 import base64
 import html
 import json
+import hmac
+import time
 from functools import wraps
 from typing import Optional, Callable, Any
+from urllib.parse import urlparse
 
 from fastapi import Request, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse, HTMLResponse
-from pydantic import BaseModel, constr, conint
+from pydantic import BaseModel, constr, conint, validator
 
 from .core import SatGateway, PaymentRequest, GatewayConfig, MockBackend
+
+
+# ---------------------------------------------------------------------------
+# Simple in-memory rate limiter (NEW-06)
+# ---------------------------------------------------------------------------
+
+class SimpleRateLimiter:
+    """Token-bucket style rate limiter per client IP."""
+
+    def __init__(self, max_requests: int = 30, window_seconds: int = 60):
+        self.max_requests = max_requests
+        self.window_seconds = window_seconds
+        self._buckets: dict[str, list[float]] = {}
+
+    def is_allowed(self, key: str) -> bool:
+        now = time.time()
+        window_start = now - self.window_seconds
+        # Keep only requests within the current window
+        self._buckets[key] = [t for t in self._buckets.get(key, []) if t > window_start]
+        if len(self._buckets[key]) >= self.max_requests:
+            return False
+        self._buckets[key].append(now)
+        return True
+
+    def cleanup(self) -> int:
+        """Remove stale entries. Returns count removed."""
+        now = time.time()
+        window_start = now - self.window_seconds
+        stale = [k for k, times in self._buckets.items() if not any(t > window_start for t in times)]
+        for k in stale:
+            del self._buckets[k]
+        return len(stale)
+
+
+_rate_limiter = SimpleRateLimiter(max_requests=30, window_seconds=60)
+_qr_rate_limiter = SimpleRateLimiter(max_requests=10, window_seconds=60)
 
 
 # ---------------------------------------------------------------------------
 # Pydantic request models
 # ---------------------------------------------------------------------------
 
+def _validate_metadata_size(value: Optional[dict]) -> Optional[dict]:
+    """Validate metadata size and nesting depth (NEW-14)."""
+    if value is None:
+        return None
+    # Limit total JSON size to 16KB
+    json_str = json.dumps(value)
+    if len(json_str) > 16384:
+        raise ValueError("Metadata exceeds 16KB limit")
+    # Limit nesting depth to 3
+    def _depth(obj, current=0):
+        if current > 3:
+            raise ValueError("Metadata nesting exceeds 3 levels")
+        if isinstance(obj, dict):
+            for v in obj.values():
+                _depth(v, current + 1)
+        elif isinstance(obj, list):
+            for item in obj:
+                _depth(item, current + 1)
+    _depth(value)
+    # Limit number of top-level keys
+    if isinstance(value, dict) and len(value) > 50:
+        raise ValueError("Metadata exceeds 50 top-level keys")
+    return value
+
+
 class InvoiceRequest(BaseModel):
     amount_sats: conint(ge=1, le=1_000_000)
     description: constr(max_length=200) = "Service access"
     resource_url: constr(max_length=500) = ""
     metadata: Optional[dict] = None
+
+    @validator("metadata", pre=True, always=True)
+    def check_metadata(cls, v):
+        return _validate_metadata_size(v)
 
 
 # ---------------------------------------------------------------------------
@@ -35,7 +103,8 @@ async def verify_api_key(
 ):
     if not x_api_key:
         raise HTTPException(status_code=401, detail="Missing API key")
-    if x_api_key != gateway.config.api_key:
+    # NEW-11: Use constant-time comparison to prevent timing attacks
+    if not hmac.compare_digest(x_api_key, gateway.config.api_key):
         raise HTTPException(status_code=401, detail="Invalid API key")
     return x_api_key
 
@@ -86,8 +155,10 @@ def require_payment(
                 if status.get("paid"):
                     payment = _gateway.get_payment(payment_id)
                     if payment:
-                        # Validate resource binding (F-01)
-                        if payment.resource_url != str(request.url):
+                        # Validate resource binding (F-01) — normalize paths (NEW-05)
+                        stored_path = urlparse(payment.resource_url).path or payment.resource_url
+                        request_path = urlparse(str(request.url)).path or str(request.url)
+                        if stored_path != request_path:
                             raise HTTPException(status_code=403, detail="Payment not valid for this resource")
                         # Validate amount (F-01)
                         if payment.amount_sats < amount_sats:
@@ -187,11 +258,19 @@ class PaymentGateway:
             }
 
         @self.router.get("/verify/{payment_id}")
-        async def verify_payment(payment_id: str):
+        async def verify_payment(payment_id: str, request: Request):
+            # NEW-06: Rate limit public verify endpoint
+            client_ip = request.client.host if request.client else "unknown"
+            if not _rate_limiter.is_allowed(f"verify:{client_ip}"):
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
             return await self.gateway.check_payment(payment_id)
 
         @self.router.get("/qr/{payment_id}")
-        async def get_qr(payment_id: str):
+        async def get_qr(payment_id: str, request: Request):
+            # NEW-06: Stricter rate limit for QR generation (CPU-intensive)
+            client_ip = request.client.host if request.client else "unknown"
+            if not _qr_rate_limiter.is_allowed(f"qr:{client_ip}"):
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
             payment = self.gateway.get_payment(payment_id)
             if not payment:
                 raise HTTPException(status_code=404, detail="Payment not found")
@@ -206,7 +285,11 @@ class PaymentGateway:
             return StreamingResponse(buf, media_type="image/png")
 
         @self.router.get("/paywall/{payment_id}")
-        async def paywall_page(payment_id: str):
+        async def paywall_page(payment_id: str, request: Request):
+            # NEW-06: Rate limit public paywall endpoint
+            client_ip = request.client.host if request.client else "unknown"
+            if not _rate_limiter.is_allowed(f"paywall:{client_ip}"):
+                raise HTTPException(status_code=429, detail="Rate limit exceeded")
             payment = self.gateway.get_payment(payment_id)
             if not payment:
                 raise HTTPException(status_code=404, detail="Payment not found")

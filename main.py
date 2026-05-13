@@ -9,9 +9,12 @@ Environment:
     SATGATEWAY_FEE_BPS    → Fee basis points (default: 50 = 0.5%)
     LND_HOST              → LND REST host (optional)
     LND_MACAROON          → LND macaroon hex (optional)
+    LND_VERIFY_TLS        → Verify LND TLS cert (default: true)
+    ALLOWED_ORIGINS       → CORS allowed origins (default: none)
 """
 
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request, Depends, HTTPException, Header
@@ -32,11 +35,14 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("SATGATEWAY_KEY environment variable must be set")
 
     if os.getenv("LND_HOST"):
+        # NEW-02: Respect LND_VERIFY_TLS env var; default True for production
+        verify_tls = os.getenv("LND_VERIFY_TLS", "true").lower() not in ("false", "0", "no", "off")
         backend = LndBackend(
             host=os.getenv("LND_HOST"),
             macaroon_hex=os.getenv("LND_MACAROON") or None,
             macaroon_path=os.getenv("LND_MACAROON_PATH"),
-            cert_path=os.getenv("LND_TLS_CERT_PATH")
+            cert_path=os.getenv("LND_TLS_CERT_PATH"),
+            verify_tls=verify_tls
         )
     else:
         backend = MockBackend()
@@ -48,6 +54,26 @@ async def lifespan(app: FastAPI):
     yield
 
 
+# NEW-15: Redact payment IDs from access log paths
+class RedactPaymentIdMiddleware:
+    """ASGI middleware that redacts UUID-like payment IDs from logged paths."""
+
+    _uuid_pattern = re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        re.IGNORECASE
+    )
+
+    def __init__(self, app):
+        self.app = app
+
+    async def __call__(self, scope, receive, send):
+        if scope["type"] == "http":
+            original_path = scope.get("path", "")
+            # Redact UUIDs in the path so access logs don't leak payment IDs
+            scope["path"] = self._uuid_pattern.sub("[REDACTED]", original_path)
+        await self.app(scope, receive, send)
+
+
 app = FastAPI(
     title="SatGateway",
     description="Bitcoin Lightning payments for websites and APIs",
@@ -55,12 +81,13 @@ app = FastAPI(
     lifespan=lifespan
 )
 
-# Restrict CORS to specific origins in production (F-17)
+# NEW-08: Restrict CORS — no wildcard fallback
 origins = os.getenv("ALLOWED_ORIGINS", "")
 if origins:
     allow_origins = [o.strip() for o in origins.split(",")]
 else:
-    allow_origins = ["*"]
+    # Default to empty list — no cross-origin requests allowed unless explicitly configured
+    allow_origins = []
 
 app.add_middleware(
     CORSMiddleware,
@@ -68,6 +95,19 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "X-API-Key", "X-Payment-ID"]
 )
+
+# NEW-15: Redact UUID payment IDs from access logs
+app.add_middleware(RedactPaymentIdMiddleware)
+
+# NEW-10: Security headers middleware
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    return response
 
 # Mount payment gateway routes
 gateway = PaymentGateway()

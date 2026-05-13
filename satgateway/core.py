@@ -36,6 +36,7 @@ class GatewayConfig:
     min_amount_sats: int = 1
     max_amount_sats: int = 10_000_000  # 0.1 BTC
     webhook_url: Optional[str] = None
+    payment_valid_for_seconds: int = 3600  # paid payment valid for 1 hour
     branding: Dict[str, str] = field(default_factory=lambda: {
         "name": "SatGateway",
         "logo_url": "",
@@ -103,8 +104,11 @@ class MockBackend(LightningBackend):
 class LndBackend(LightningBackend):
     """Connect to an LND node via REST API. Works with Voltage, Umbrel, dockerized LND, etc."""
 
+    _TIMEOUT = None  # set in __init__
+
     def __init__(self, host: str, macaroon_hex: Optional[str] = None,
-                 macaroon_path: Optional[str] = None, cert_path: Optional[str] = None):
+                 macaroon_path: Optional[str] = None, cert_path: Optional[str] = None,
+                 verify_tls: bool = True):
         self.host = host.rstrip("/")
         self.cert_path = cert_path
 
@@ -118,10 +122,18 @@ class LndBackend(LightningBackend):
 
         self._headers = {"Grpc-Metadata-macaroon": self.macaroon}
 
-        # Handle TLS — docker internal often uses self-signed; allow override
+        # Handle TLS — require cert in production; allow override via verify_tls=False for dev
         import ssl
-        if cert_path and os.path.exists(cert_path):
-            self._ssl = ssl.create_default_context(cafile=cert_path)
+        import aiohttp
+        self._TIMEOUT = aiohttp.ClientTimeout(total=10)
+        if verify_tls:
+            if cert_path and os.path.exists(cert_path):
+                self._ssl = ssl.create_default_context(cafile=cert_path)
+            else:
+                raise ValueError(
+                    "LND TLS certificate is required when verify_tls=True. "
+                    "Set LND_TLS_CERT_PATH or LND_VERIFY_TLS=false for development only."
+                )
         else:
             self._ssl = False  # aiohttp interprets False as no verification
 
@@ -134,20 +146,25 @@ class LndBackend(LightningBackend):
             "memo": description,
             "expiry": expiry_seconds
         }
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, json=payload, headers=self._headers, ssl=self._ssl) as resp:
-                if resp.status != 200:
-                    text = await resp.text()
-                    raise RuntimeError(f"LND create_invoice failed: {resp.status} {text}")
-                data = await resp.json()
-                # r_hash is base64 from LND REST
-                r_hash_b64 = data["r_hash"]
-                r_hash_hex = base64.b64decode(r_hash_b64).hex()
-                return {
-                    "invoice": data["payment_request"],
-                    "payment_hash": r_hash_hex,
-                    "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)).isoformat()
-                }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(url, json=payload, headers=self._headers, ssl=self._ssl, timeout=self._TIMEOUT) as resp:
+                    if resp.status != 200:
+                        text = await resp.text()
+                        raise RuntimeError(f"LND create_invoice failed: {resp.status}")
+                    data = await resp.json()
+                    # r_hash is base64 from LND REST
+                    r_hash_b64 = data["r_hash"]
+                    r_hash_hex = base64.b64decode(r_hash_b64).hex()
+                    return {
+                        "invoice": data["payment_request"],
+                        "payment_hash": r_hash_hex,
+                        "expires_at": (datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)).isoformat()
+                    }
+        except RuntimeError:
+            raise
+        except Exception as e:
+            raise RuntimeError("Invoice service unavailable") from e
 
     async def check_payment(self, payment_hash: str):
         import aiohttp
@@ -155,30 +172,36 @@ class LndBackend(LightningBackend):
         # LND REST expects base64-encoded payment hash in URL
         ph_b64 = base64.b64encode(bytes.fromhex(payment_hash)).decode()
         url = f"{self.host}/v1/invoice/{ph_b64}"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers, ssl=self._ssl) as resp:
-                if resp.status == 404:
-                    return {"paid": False, "preimage": None, "amount_paid": 0}
-                data = await resp.json()
-                preimage = data.get("r_preimage")
-                if isinstance(preimage, str) and not preimage.startswith("0x"):
-                    try:
-                        preimage = base64.b64decode(preimage).hex()
-                    except Exception:
-                        pass
-                return {
-                    "paid": data.get("settled", False),
-                    "preimage": preimage,
-                    "amount_paid": data.get("amt_paid_sat", 0)
-                }
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self._headers, ssl=self._ssl, timeout=self._TIMEOUT) as resp:
+                    if resp.status == 404:
+                        return {"paid": False, "preimage": None, "amount_paid": 0}
+                    data = await resp.json()
+                    preimage = data.get("r_preimage")
+                    if isinstance(preimage, str) and not preimage.startswith("0x"):
+                        try:
+                            preimage = base64.b64decode(preimage).hex()
+                        except Exception:
+                            pass
+                    return {
+                        "paid": data.get("settled", False),
+                        "preimage": preimage,
+                        "amount_paid": data.get("amt_paid_sat", 0)
+                    }
+        except Exception as e:
+            raise RuntimeError("Payment verification service unavailable") from e
 
     async def get_balance(self):
         import aiohttp
         url = f"{self.host}/v1/balance/channels"
-        async with aiohttp.ClientSession() as session:
-            async with session.get(url, headers=self._headers, ssl=self._ssl) as resp:
-                data = await resp.json()
-                return data.get("balance", 0)
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=self._headers, ssl=self._ssl, timeout=self._TIMEOUT) as resp:
+                    data = await resp.json()
+                    return data.get("balance", 0)
+        except Exception as e:
+            raise RuntimeError("Balance service unavailable") from e
 
 
 # ---------------------------------------------------------------------------
@@ -235,12 +258,21 @@ class SatGateway:
             return {"found": False, "paid": False}
 
         if req.status == "paid":
+            # NEW-03: Check if paid payment has expired its validity window
+            now = datetime.now(timezone.utc)
+            valid_until = req.paid_at + timedelta(seconds=self.config.payment_valid_for_seconds) if req.paid_at else now
+            if now > valid_until:
+                return {"found": True, "paid": False, "expired": True, "detail": "Payment validity period expired"}
             return {"found": True, "paid": True, "amount_sats": req.amount_sats, "paid_at": req.paid_at.isoformat() if req.paid_at else None}
 
         lock = self._locks.setdefault(payment_id, asyncio.Lock())
         async with lock:
             # Re-check inside lock in case another coroutine already updated status
             if req.status == "paid":
+                now = datetime.now(timezone.utc)
+                valid_until = req.paid_at + timedelta(seconds=self.config.payment_valid_for_seconds) if req.paid_at else now
+                if now > valid_until:
+                    return {"found": True, "paid": False, "expired": True, "detail": "Payment validity period expired"}
                 return {"found": True, "paid": True, "amount_sats": req.amount_sats, "paid_at": req.paid_at.isoformat() if req.paid_at else None}
 
             if req.expires_at < datetime.now(timezone.utc):
@@ -261,9 +293,28 @@ class SatGateway:
                         "paid_amount": amount_paid,
                         "expires_at": req.expires_at.isoformat()
                     }
+
+                # NEW-04: Cryptographically verify preimage against payment hash
+                preimage = result.get("preimage")
+                if preimage and req.payment_hash:
+                    try:
+                        expected_hash = hashlib.sha256(bytes.fromhex(preimage)).hexdigest()
+                        if expected_hash != req.payment_hash:
+                            return {
+                                "found": True,
+                                "paid": False,
+                                "detail": "Preimage verification failed — possible fraud"
+                            }
+                    except ValueError:
+                        return {
+                            "found": True,
+                            "paid": False,
+                            "detail": "Invalid preimage format"
+                        }
+
                 req.status = "paid"
                 req.paid_at = datetime.now(timezone.utc)
-                req.preimage = result.get("preimage")
+                req.preimage = preimage
                 self._trigger_callback(req)
 
             return {
@@ -272,6 +323,18 @@ class SatGateway:
                 "amount_sats": req.amount_sats,
                 "expires_at": req.expires_at.isoformat()
             }
+
+    def cleanup_expired(self) -> int:
+        """Remove expired payments and their locks. Returns count removed."""
+        now = datetime.now(timezone.utc)
+        expired_ids = [
+            pid for pid, p in self._payments.items()
+            if p.expires_at < now and p.status != "paid"
+        ]
+        for pid in expired_ids:
+            self._payments.pop(pid, None)
+            self._locks.pop(pid, None)
+        return len(expired_ids)
 
     def on_payment(self, payment_id: str, callback: Callable):
         """Register a callback for when a payment is confirmed."""
