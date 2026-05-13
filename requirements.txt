@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+python-multipart
+aiohttp
+jinja2
+qrcode[pil]
+python-jose[cryptography]
+redis
+websockets

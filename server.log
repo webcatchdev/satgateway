@@ -1,0 +1,18 @@
+INFO:     Started server process [37316]
+INFO:     Waiting for application startup.
+INFO:     Application startup complete.
+INFO:     Uvicorn running on http://0.0.0.0:9026 (Press CTRL+C to quit)
+INFO:     127.0.0.1:58812 - "GET /api/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58823 - "POST /payments/invoice HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58824 - "GET /api/secret HTTP/1.1" 402 Payment Required
+INFO:     127.0.0.1:58825 - "GET /payments/verify/7ae2922c-8821-405b-8d77-4511542f029a HTTP/1.1" 200 OK
+INFO:     127.0.0.1:58826 - "GET /api/secret HTTP/1.1" 200 OK
+INFO:     127.0.0.1:60410 - "GET /analytics/dashboard HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52510 - "GET /api/status HTTP/1.1" 200 OK
+INFO:     127.0.0.1:52512 - "GET /payments/api/status HTTP/1.1" 404 Not Found
+INFO:     127.0.0.1:52513 - "GET /api/secret HTTP/1.1" 402 Payment Required
+INFO:     127.0.0.1:52515 - "GET / HTTP/1.1" 200 OK
+INFO:     Shutting down
+INFO:     Waiting for application shutdown.
+INFO:     Application shutdown complete.
+INFO:     Finished server process [37316]

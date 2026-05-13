@@ -1,0 +1,29 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>My Paywalled Site</title>
+    <style>
+        body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; max-width: 600px; margin: 2rem auto; padding: 0 1rem; background: #0d1117; color: #c9d1d9; }
+        h1 { color: #F7931A; }
+        .content { margin-top: 2rem; }
+    </style>
+</head>
+<body>
+    <h1>⚡ My Paywalled Site</h1>
+    <p>This is the free preview. Pay 50 sats to read the rest.</p>
+
+    <!-- SatGateway Paywall -->
+    <div id="article-paywall"></div>
+    <script src="http://localhost:9026/static/paywall.js" 
+            data-amount="50"
+            data-resource="http://localhost:9026/api/secret"
+            data-container="article-paywall">
+    </script>
+
+    <div class="content">
+        <p><em>The rest of the article will appear here after payment...</em></p>
+    </div>
+</body>
+</html>

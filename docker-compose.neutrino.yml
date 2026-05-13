@@ -1,0 +1,34 @@
+version: "3.8"
+
+services:
+  lnd:
+    image: lightninglabs/lnd:v0.18.0-beta
+    container_name: lnd
+    restart: unless-stopped
+    ports:
+      - "9735:9735"       # P2P Lightning
+      - "127.0.0.1:10009:10009"  # gRPC (localhost only)
+      - "127.0.0.1:8080:8080"    # REST (localhost only)
+    volumes:
+      - ./lnd-data:/root/.lnd
+      - ./lnd-neutrino.conf:/root/.lnd/lnd.conf
+    command: >
+      lnd
+      --configfile=/root/.lnd/lnd.conf
+
+  satgateway:
+    build: .
+    container_name: satgateway
+    restart: unless-stopped
+    ports:
+      - "9026:9026"
+    environment:
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY}
+      - LND_HOST=https://lnd:8080
+      - LND_MACAROON_PATH=/lnd-macaroons/invoice.macaroon
+      - LND_TLS_CERT_PATH=/lnd-macaroons/tls.cert
+      - LND_NETWORK=mainnet
+    volumes:
+      - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
+    depends_on:
+      - lnd

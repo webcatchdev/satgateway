@@ -1,0 +1,57 @@
+version: "3.8"
+
+services:
+  bitcoind:
+    image: bitcoin/bitcoin:28.0
+    container_name: bitcoind
+    restart: unless-stopped
+    ports:
+      - "8333:8333"       # Bitcoin P2P
+      - "127.0.0.1:8332:8332"  # RPC (localhost only)
+    volumes:
+      - ./bitcoin-data:/bitcoin/.bitcoin
+    command: >
+      -chain=main
+      -prune=550
+      -rpcuser=satgateway
+      -rpcpassword=CHANGE_ME_STRONG_PASSWORD
+      -rpcbind=0.0.0.0
+      -rpcallowip=172.16.0.0/12
+      -server=1
+      -txindex=0
+      -dbcache=512
+      -maxmempool=300
+      -maxconnections=40
+
+  lnd:
+    image: lightninglabs/lnd:v0.18.0-beta
+    container_name: lnd
+    restart: unless-stopped
+    ports:
+      - "9735:9735"
+      - "127.0.0.1:10009:10009"
+    volumes:
+      - ./lnd-data:/root/.lnd
+      - ./lnd-fullnode.conf:/root/.lnd/lnd.conf
+    command: >
+      lnd
+      --configfile=/root/.lnd/lnd.conf
+    depends_on:
+      - bitcoind
+
+  satgateway:
+    build: .
+    container_name: satgateway
+    restart: unless-stopped
+    ports:
+      - "9026:9026"
+    environment:
+      - SATGATEWAY_KEY=${SATGATEWAY_KEY}
+      - LND_HOST=lnd:10009
+      - LND_MACAROON_PATH=/lnd-macaroons/invoice.macaroon
+      - LND_TLS_CERT_PATH=/lnd-macaroons/tls.cert
+      - LND_NETWORK=mainnet
+    volumes:
+      - ./lnd-data/data/chain/bitcoin/mainnet:/lnd-macaroons:ro
+    depends_on:
+      - lnd
