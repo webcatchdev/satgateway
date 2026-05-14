@@ -68,6 +68,11 @@ def premium_data():
 
 ---
 
+## ⚠️ Security Warning
+
+> **Before deploying to production, change all placeholder passwords.**
+> `docker-compose.fullnode.yml` and `lnd-fullnode.conf` contain the placeholder password `CHANGE_ME_STRONG_PASSWORD` for Bitcoin RPC. You **must** replace this with a strong, unique password before starting your node. Failure to do so will leave your Bitcoin RPC exposed to anyone who reads the config file.
+
 ## Configuration
 
 ### Environment Variables

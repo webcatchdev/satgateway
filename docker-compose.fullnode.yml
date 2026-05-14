@@ -1,5 +1,8 @@
 version: "3.8"
 
+# ⚠️ SECURITY: Change CHANGE_ME_STRONG_PASSWORD below before deploying.
+# Using the placeholder password will expose your Bitcoin RPC to attackers.
+
 services:
   bitcoind:
     image: bitcoin/bitcoin:28.0

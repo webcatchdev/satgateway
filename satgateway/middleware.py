@@ -130,7 +130,10 @@ def require_payment(
             return {"data": "secret"}
     """
     def decorator(func):
-        _gateway = gateway or _default_gateway()
+        _explicit_gateway = gateway
+
+        def _resolve_gateway() -> SatGateway:
+            return _explicit_gateway or _default_gateway()
 
         @wraps(func)
         async def wrapper(*args, **kwargs):
@@ -147,6 +150,8 @@ def require_payment(
 
             if not request:
                 raise HTTPException(status_code=500, detail="Could not find Request object")
+
+            _gateway = _resolve_gateway()
 
             # Check for existing payment proof in headers or cookies
             payment_id = request.headers.get("X-Payment-ID") or request.cookies.get("sg_payment_id")
@@ -229,10 +234,14 @@ class PaymentGateway:
     """
 
     def __init__(self, sat_gateway: Optional[SatGateway] = None):
-        self.gateway = sat_gateway or _default_gateway()
+        self._sat_gateway = sat_gateway
         from fastapi import APIRouter
         self.router = APIRouter()
         self._register_routes()
+
+    @property
+    def gateway(self) -> SatGateway:
+        return self._sat_gateway or _default_gateway()
 
     def _register_routes(self):
         @self.router.post("/invoice")

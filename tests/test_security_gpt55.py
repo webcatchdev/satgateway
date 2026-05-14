@@ -526,16 +526,18 @@ class TestMetadataBounded:
 
 class TestPaymentIdsRedacted:
     """
-    RedactPaymentIdMiddleware strips UUID-like payment IDs from access log
-    paths before they reach Uvicorn's access logger.
+    RedactAccessLog filter strips UUID-like payment IDs from uvicorn access
+    logs without breaking request routing.
     """
 
-    def test_redact_middleware_exists(self):
+    def test_redact_filter_exists(self):
         main_path = os.path.expanduser("~/satgateway/main.py")
         with open(main_path) as f:
             source = f.read()
-        assert "RedactPaymentIdMiddleware" in source
+        assert "RedactAccessLog" in source
         assert "[REDACTED]" in source
+        # Must NOT be an ASGI middleware that mutates scope["path"]
+        assert "scope[\"path\"]" not in source
 
 
 # ---------------------------------------------------------------------------

@@ -13,6 +13,7 @@ Environment:
     ALLOWED_ORIGINS       → CORS allowed origins (default: none)
 """
 
+import logging
 import os
 import re
 from contextlib import asynccontextmanager
@@ -59,23 +60,27 @@ async def lifespan(app: FastAPI):
 
 
 # NEW-15: Redact payment IDs from access log paths
-class RedactPaymentIdMiddleware:
-    """ASGI middleware that redacts UUID-like payment IDs from logged paths."""
+class RedactAccessLog(logging.Filter):
+    """Filter that redacts UUID-like payment IDs from uvicorn access logs."""
 
     _uuid_pattern = re.compile(
         r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
         re.IGNORECASE
     )
 
-    def __init__(self, app):
-        self.app = app
+    def filter(self, record):
+        # Uvicorn access log format: %(client_addr)s - "%(request_line)s" %(status_code)s
+        # request_line contains the path with the payment ID
+        if hasattr(record, "args") and len(record.args) >= 3:
+            path = record.args[2]
+            if isinstance(path, str):
+                redacted = self._uuid_pattern.sub("[REDACTED]", path)
+                record.args = (record.args[0], record.args[1], redacted, *record.args[3:])
+        return True
 
-    async def __call__(self, scope, receive, send):
-        if scope["type"] == "http":
-            original_path = scope.get("path", "")
-            # Redact UUIDs in the path so access logs don't leak payment IDs
-            scope["path"] = self._uuid_pattern.sub("[REDACTED]", original_path)
-        await self.app(scope, receive, send)
+
+# Install the filter on uvicorn's access logger
+logging.getLogger("uvicorn.access").addFilter(RedactAccessLog())
 
 
 app = FastAPI(
@@ -99,9 +104,6 @@ app.add_middleware(
     allow_methods=["GET", "POST"],
     allow_headers=["Content-Type", "X-API-Key", "X-Payment-ID"]
 )
-
-# NEW-15: Redact UUID payment IDs from access logs
-app.add_middleware(RedactPaymentIdMiddleware)
 
 # NEW-10: Security headers middleware
 @app.middleware("http")
