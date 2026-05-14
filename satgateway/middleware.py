@@ -12,7 +12,7 @@ from urllib.parse import urlparse
 
 from fastapi import Request, HTTPException, Depends, Header
 from fastapi.responses import JSONResponse, HTMLResponse
-from pydantic import BaseModel, constr, conint, validator
+from pydantic import BaseModel, constr, conint, field_validator
 
 from .core import SatGateway, PaymentRequest, GatewayConfig, MockBackend
 
@@ -88,7 +88,8 @@ class InvoiceRequest(BaseModel):
     resource_url: constr(max_length=500) = ""
     metadata: Optional[dict] = None
 
-    @validator("metadata", pre=True, always=True)
+    @field_validator("metadata", mode="before")
+    @classmethod
     def check_metadata(cls, v):
         return _validate_metadata_size(v)
 

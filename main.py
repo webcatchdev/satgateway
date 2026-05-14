@@ -47,11 +47,15 @@ async def lifespan(app: FastAPI):
     else:
         backend = MockBackend()
 
-    init_gateway(
+    gw = init_gateway(
         backend=backend,
         config=GatewayConfig(api_key=api_key, fee_basis_points=fee_bps)
     )
-    yield
+    gw.start_cleanup_task()
+    try:
+        yield
+    finally:
+        gw.stop_cleanup_task()
 
 
 # NEW-15: Redact payment IDs from access log paths

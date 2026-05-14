@@ -37,6 +37,8 @@ class GatewayConfig:
     max_amount_sats: int = 10_000_000  # 0.1 BTC
     webhook_url: Optional[str] = None
     payment_valid_for_seconds: int = 3600  # paid payment valid for 1 hour
+    max_stored_payments: int = 10_000  # cap in-memory storage
+    cleanup_interval_seconds: int = 300  # run cleanup every 5 minutes
     branding: Dict[str, str] = field(default_factory=lambda: {
         "name": "SatGateway",
         "logo_url": "",
@@ -72,7 +74,10 @@ class MockBackend(LightningBackend):
         self._balance = 1_000_000  # 1M sats
 
     async def create_invoice(self, amount_sats: int, description: str, expiry_seconds: int = 3600):
-        payment_hash = hashlib.sha256(os.urandom(32)).hexdigest()
+        # Generate a cryptographically valid preimage→hash pair
+        preimage_bytes = os.urandom(32)
+        preimage = preimage_bytes.hex()
+        payment_hash = hashlib.sha256(preimage_bytes).hexdigest()
         invoice = f"lnbc{amount_sats}n1p{payment_hash[:20]}...MOCK"
         expires = datetime.now(timezone.utc) + timedelta(seconds=expiry_seconds)
         self._invoices[payment_hash] = {
@@ -80,7 +85,7 @@ class MockBackend(LightningBackend):
             "description": description,
             "expires_at": expires,
             "paid": False,
-            "preimage": None,
+            "preimage": preimage,
             "created_at": datetime.now(timezone.utc)
         }
         return {"invoice": invoice, "payment_hash": payment_hash, "expires_at": expires.isoformat()}
@@ -90,7 +95,6 @@ class MockBackend(LightningBackend):
         # DEMO: auto-pay after 5 seconds
         if not inv.get("paid") and inv.get("created_at", datetime.now(timezone.utc)) < datetime.now(timezone.utc) - timedelta(seconds=5):
             inv["paid"] = True
-            inv["preimage"] = hashlib.sha256(os.urandom(32)).hexdigest()
         return {
             "paid": inv.get("paid", False),
             "preimage": inv.get("preimage"),
@@ -225,6 +229,7 @@ class SatGateway:
         self._payments: Dict[str, PaymentRequest] = {}
         self._callbacks: Dict[str, Callable] = {}
         self._locks: Dict[str, asyncio.Lock] = {}
+        self._cleanup_task: Optional[asyncio.Task] = None
 
     async def create_request(
         self,
@@ -250,6 +255,8 @@ class SatGateway:
             payment_hash=inv_data.get("payment_hash")
         )
         self._payments[req.id] = req
+        # Enforce max stored payments cap — evict oldest expired/unpaid first, then oldest overall
+        self._enforce_storage_cap()
         return req
 
     async def check_payment(self, payment_id: str) -> Dict[str, Any]:
@@ -325,16 +332,59 @@ class SatGateway:
             }
 
     def cleanup_expired(self) -> int:
-        """Remove expired payments and their locks. Returns count removed."""
+        """Remove expired payments (unpaid) and paid payments whose validity window expired. Returns count removed."""
         now = datetime.now(timezone.utc)
-        expired_ids = [
-            pid for pid, p in self._payments.items()
-            if p.expires_at < now and p.status != "paid"
-        ]
+        expired_ids = []
+        for pid, p in self._payments.items():
+            if p.status != "paid" and p.expires_at < now:
+                expired_ids.append(pid)
+            elif p.status == "paid" and p.paid_at:
+                valid_until = p.paid_at + timedelta(seconds=self.config.payment_valid_for_seconds)
+                if now > valid_until:
+                    expired_ids.append(pid)
         for pid in expired_ids:
             self._payments.pop(pid, None)
             self._locks.pop(pid, None)
         return len(expired_ids)
+
+    def _enforce_storage_cap(self) -> int:
+        """If payment store exceeds cap, evict oldest items. Returns count removed."""
+        cap = self.config.max_stored_payments
+        if len(self._payments) <= cap:
+            return 0
+        # Sort by creation/expiry time; evict oldest first
+        sorted_items = sorted(
+            self._payments.items(),
+            key=lambda item: item[1].expires_at
+        )
+        to_evict = len(sorted_items) - cap
+        removed = 0
+        for pid, _ in sorted_items[:to_evict]:
+            self._payments.pop(pid, None)
+            self._locks.pop(pid, None)
+            removed += 1
+        return removed
+
+    async def _cleanup_loop(self):
+        """Background task that periodically cleans up expired payments."""
+        while True:
+            try:
+                await asyncio.sleep(self.config.cleanup_interval_seconds)
+                self.cleanup_expired()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                pass
+
+    def start_cleanup_task(self):
+        """Start the background cleanup task (call once at startup)."""
+        if self._cleanup_task is None or self._cleanup_task.done():
+            self._cleanup_task = asyncio.create_task(self._cleanup_loop())
+
+    def stop_cleanup_task(self):
+        """Stop the background cleanup task (call on shutdown)."""
+        if self._cleanup_task and not self._cleanup_task.done():
+            self._cleanup_task.cancel()
 
     def on_payment(self, payment_id: str, callback: Callable):
         """Register a callback for when a payment is confirmed."""

@@ -15,6 +15,7 @@ COPY . .
 EXPOSE 9026
 
 ENV PYTHONUNBUFFERED=1
-ENV SATGATEWAY_KEY=changeme
+
+# SATGATEWAY_KEY must be provided at runtime — the app refuses to start without it.
 
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9026"]
