@@ -13,6 +13,7 @@ from unittest.mock import patch, AsyncMock, MagicMock
 import sys
 import os
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
+os.environ.setdefault("MOCK_BACKEND", "1")
 
 from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest
 from satgateway.middleware import PaymentGateway, require_payment, init_gateway

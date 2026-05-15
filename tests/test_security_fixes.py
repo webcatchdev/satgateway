@@ -14,6 +14,7 @@ from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
+os.environ.setdefault("MOCK_BACKEND", "1")
 
 from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest
 from satgateway.middleware import require_payment, PaymentGateway, init_gateway, _default_gateway

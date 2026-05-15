@@ -21,6 +21,7 @@ from fastapi.responses import HTMLResponse
 from fastapi.testclient import TestClient
 
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
+os.environ.setdefault("MOCK_BACKEND", "1")
 
 from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest, LndBackend
 from satgateway.middleware import require_payment, PaymentGateway, init_gateway, verify_api_key, InvoiceRequest

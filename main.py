@@ -45,8 +45,12 @@ async def lifespan(app: FastAPI):
             cert_path=os.getenv("LND_TLS_CERT_PATH"),
             verify_tls=verify_tls
         )
-    else:
+    elif os.getenv("MOCK_BACKEND", "").lower() in ("1", "true", "yes"):
         backend = MockBackend()
+    else:
+        raise RuntimeError(
+            "No Lightning backend configured. Set LND_HOST (production) or MOCK_BACKEND=1 (development)."
+        )
 
     gw = init_gateway(
         backend=backend,

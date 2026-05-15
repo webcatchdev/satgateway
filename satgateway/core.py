@@ -174,7 +174,8 @@ class LndBackend(LightningBackend):
         import aiohttp
         import base64
         # LND REST expects base64-encoded payment hash in URL
-        ph_b64 = base64.b64encode(bytes.fromhex(payment_hash)).decode()
+        # HIGH FIX: Use URL-safe base64 to avoid / and + corrupting the URL path
+        ph_b64 = base64.urlsafe_b64encode(bytes.fromhex(payment_hash)).decode()
         url = f"{self.host}/v1/invoice/{ph_b64}"
         try:
             async with aiohttp.ClientSession() as session:
@@ -188,10 +189,16 @@ class LndBackend(LightningBackend):
                             preimage = base64.b64decode(preimage).hex()
                         except Exception:
                             pass
+                    # HIGH FIX: LND may return amt_paid_sat as a JSON string
+                    amount_paid = data.get("amt_paid_sat", 0)
+                    try:
+                        amount_paid = int(amount_paid)
+                    except (ValueError, TypeError):
+                        amount_paid = 0
                     return {
                         "paid": data.get("settled", False),
                         "preimage": preimage,
-                        "amount_paid": data.get("amt_paid_sat", 0)
+                        "amount_paid": amount_paid
                     }
         except Exception as e:
             raise RuntimeError("Payment verification service unavailable") from e
@@ -290,7 +297,12 @@ class SatGateway:
 
             if result["paid"]:
                 # Validate amount paid meets or exceeds requested amount
+                # HIGH FIX: Backend may return amount_paid as a string
                 amount_paid = result.get("amount_paid", 0)
+                try:
+                    amount_paid = int(amount_paid)
+                except (ValueError, TypeError):
+                    amount_paid = 0
                 if amount_paid < req.amount_sats:
                     return {
                         "found": True,

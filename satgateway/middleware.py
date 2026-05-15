@@ -169,7 +169,10 @@ def require_payment(
                         # Validate amount (F-01)
                         if payment.amount_sats < amount_sats:
                             raise HTTPException(status_code=403, detail="Payment amount insufficient")
-                    return await func(*args, **kwargs)
+                        return await func(*args, **kwargs)
+                    # CRITICAL FIX: If check_payment says paid but record is gone (evicted/corrupted),
+                    # do NOT bypass auth — fall through to create a new payment requirement.
+                    pass
 
             # No valid payment — create one and return 402
             resource_url = str(request.url)
@@ -195,6 +198,7 @@ def require_payment(
                     "verify_url": f"/satgateway/verify/{req.id}"
                 },
                 headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, private",
                     "PAYMENT-REQUIRED": base64.b64encode(json.dumps({
                         "scheme": "exact",
                         "network": "lightning",
@@ -273,7 +277,12 @@ class PaymentGateway:
             client_ip = request.client.host if request.client else "unknown"
             if not _rate_limiter.is_allowed(f"verify:{client_ip}"):
                 raise HTTPException(status_code=429, detail="Rate limit exceeded")
-            return await self.gateway.check_payment(payment_id)
+            result = await self.gateway.check_payment(payment_id)
+            from fastapi.responses import JSONResponse
+            return JSONResponse(
+                content=result,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"}
+            )
 
         @self.router.get("/qr/{payment_id}")
         async def get_qr(payment_id: str, request: Request):
@@ -292,7 +301,11 @@ class PaymentGateway:
             qr.save(buf, format="PNG")
             buf.seek(0)
             from fastapi.responses import StreamingResponse
-            return StreamingResponse(buf, media_type="image/png")
+            return StreamingResponse(
+                buf,
+                media_type="image/png",
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"}
+            )
 
         @self.router.get("/paywall/{payment_id}")
         async def paywall_page(payment_id: str, request: Request):
@@ -305,17 +318,24 @@ class PaymentGateway:
                 raise HTTPException(status_code=404, detail="Payment not found")
 
             # Escape values for safe HTML/JS insertion (F-02)
+            # CRITICAL FIX: JSON in <script> context must escape </ to prevent breakout
+            def _js_string(value: str) -> str:
+                s = json.dumps(value)
+                # Prevent </script> breakout in JS string literals
+                return s.replace("</", "<\\/")
+
             safe_amount = html.escape(str(payment.amount_sats))
             safe_id = html.escape(payment.id)
             safe_invoice = html.escape(payment.invoice)
-            safe_invoice_js = json.dumps(payment.invoice)
-            safe_resource_js = json.dumps(payment.resource_url or "/")
+            safe_invoice_js = _js_string(payment.invoice)
+            safe_resource_js = _js_string(payment.resource_url or "/")
 
             html_content = f"""<!DOCTYPE html>
 <html>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, private">
     <title>Payment Required</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
@@ -389,8 +409,15 @@ def _default_gateway() -> SatGateway:
         api_key = os.getenv("SATGATEWAY_KEY")
         if not api_key:
             raise RuntimeError("SATGATEWAY_KEY environment variable must be set")
+        # HIGH FIX: MockBackend only allowed when MOCK_BACKEND=1 is explicitly set
+        if os.getenv("MOCK_BACKEND", "").lower() in ("1", "true", "yes"):
+            backend = MockBackend()
+        else:
+            raise RuntimeError(
+                "No Lightning backend configured. Set LND_HOST or MOCK_BACKEND=1."
+            )
         _default_gw = SatGateway(
-            backend=MockBackend(),
+            backend=backend,
             config=GatewayConfig(api_key=api_key)
         )
     return _default_gw
@@ -404,8 +431,16 @@ def init_gateway(backend=None, config=None):
         if not api_key:
             raise RuntimeError("SATGATEWAY_KEY environment variable must be set")
         config = GatewayConfig(api_key=api_key)
+    # HIGH FIX: MockBackend only allowed when MOCK_BACKEND=1 is explicitly set
+    if backend is None:
+        if os.getenv("MOCK_BACKEND", "").lower() in ("1", "true", "yes"):
+            backend = MockBackend()
+        else:
+            raise RuntimeError(
+                "No Lightning backend configured. Set LND_HOST or MOCK_BACKEND=1."
+            )
     _default_gw = SatGateway(
-        backend=backend or MockBackend(),
+        backend=backend,
         config=config
     )
     return _default_gw
