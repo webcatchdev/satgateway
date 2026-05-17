@@ -24,4 +24,6 @@ jobs:
       - name: Lint
         run: ruff check satgateway/ tests/
       - name: Test
+        env:
+          MOCK_BACKEND: "1"
         run: pytest tests/ -v --tb=short
