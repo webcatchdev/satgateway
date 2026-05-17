@@ -8,15 +8,15 @@ Website (2 lines):
 
 API (3 lines):
     from satgateway import require_payment
-    
+
     @app.get("/premium")
     @require_payment(amount_sats=100)
     def premium_content(request: Request):
         return {"secret": "data"}
 """
 
-from .middleware import require_payment, PaymentGateway
 from .core import SatGateway
+from .middleware import PaymentGateway, require_payment
 
 __version__ = "0.1.0"
 __all__ = ["require_payment", "PaymentGateway", "SatGateway"]

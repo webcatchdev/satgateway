@@ -6,14 +6,11 @@ Run with: pytest tests/test_security_gpt55.py -v
 """
 
 import asyncio
-import base64
 import hashlib
-import json
 import os
 import sys
-import time
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, AsyncMock, MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi import FastAPI, Request
@@ -23,8 +20,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
 os.environ.setdefault("MOCK_BACKEND", "1")
 
-from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest, LndBackend
-from satgateway.middleware import require_payment, PaymentGateway, init_gateway, verify_api_key, InvoiceRequest
+from satgateway.core import GatewayConfig, LndBackend, MockBackend, SatGateway
+from satgateway.middleware import (
+    PaymentGateway,
+    init_gateway,
+    require_payment,
+    verify_api_key,
+)
 
 # Ensure a fresh default gateway for every test module load
 init_gateway(
@@ -208,7 +210,6 @@ class TestPaidPaymentExpires:
             description="test",
             resource_url="http://testserver/api/expensive"
         )
-        import asyncio
         req = asyncio.get_event_loop().run_until_complete(req)
         req.status = "paid"
         req.paid_at = datetime.now(timezone.utc) - timedelta(days=1)
@@ -325,10 +326,6 @@ class TestUnusedDependencyRemoved:
     """
 
     def test_python_jose_not_imported(self):
-        import satgateway
-        import satgateway.core
-        import satgateway.middleware
-        import main
         assert "jose" not in sys.modules
 
     def test_python_jose_not_in_requirements(self):

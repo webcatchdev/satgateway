@@ -1,13 +1,12 @@
 """Core payment engine for SatGateway."""
 
-import os
-import json
-import uuid
-import hashlib
 import asyncio
-from datetime import datetime, timedelta, timezone
-from typing import Optional, Callable, Dict, Any
+import hashlib
+import os
+import uuid
 from dataclasses import dataclass, field
+from datetime import datetime, timedelta, timezone
+from typing import Any, Callable, Dict, Optional
 
 # ---------------------------------------------------------------------------
 # Data models
@@ -128,6 +127,7 @@ class LndBackend(LightningBackend):
 
         # Handle TLS — require cert in production; allow override via verify_tls=False for dev
         import ssl
+
         import aiohttp
         self._TIMEOUT = aiohttp.ClientTimeout(total=10)
         if verify_tls:
@@ -142,8 +142,9 @@ class LndBackend(LightningBackend):
             self._ssl = False  # aiohttp interprets False as no verification
 
     async def create_invoice(self, amount_sats: int, description: str, expiry_seconds: int = 3600):
-        import aiohttp
         import base64
+
+        import aiohttp
         url = f"{self.host}/v1/invoices"
         payload = {
             "value": amount_sats,
@@ -154,7 +155,6 @@ class LndBackend(LightningBackend):
             async with aiohttp.ClientSession() as session:
                 async with session.post(url, json=payload, headers=self._headers, ssl=self._ssl, timeout=self._TIMEOUT) as resp:
                     if resp.status != 200:
-                        text = await resp.text()
                         raise RuntimeError(f"LND create_invoice failed: {resp.status}")
                     data = await resp.json()
                     # r_hash is base64 from LND REST
@@ -171,8 +171,9 @@ class LndBackend(LightningBackend):
             raise RuntimeError("Invoice service unavailable") from e
 
     async def check_payment(self, payment_hash: str):
-        import aiohttp
         import base64
+
+        import aiohttp
         # LND REST expects base64-encoded payment hash in URL
         # HIGH FIX: Use URL-safe base64 to avoid / and + corrupting the URL path
         ph_b64 = base64.urlsafe_b64encode(bytes.fromhex(payment_hash)).decode()

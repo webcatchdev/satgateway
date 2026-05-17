@@ -5,12 +5,10 @@ Run with: pytest tests/test_security_launch_blockers.py -v
 
 import asyncio
 import base64
-import hashlib
-import json
 import os
 import sys
-from datetime import datetime, timezone, timedelta
-from unittest.mock import patch, AsyncMock, MagicMock
+from datetime import datetime, timedelta, timezone
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 from fastapi import FastAPI, Request
@@ -19,8 +17,19 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
 os.environ.setdefault("MOCK_BACKEND", "1")
 
-from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest, LndBackend
-from satgateway.middleware import require_payment, PaymentGateway, init_gateway, _default_gateway
+from satgateway.core import (
+    GatewayConfig,
+    LndBackend,
+    MockBackend,
+    PaymentRequest,
+    SatGateway,
+)
+from satgateway.middleware import (
+    PaymentGateway,
+    _default_gateway,
+    init_gateway,
+    require_payment,
+)
 
 
 @pytest.fixture

@@ -3,21 +3,18 @@ Security gap tests for SatGateway — demonstrates vulnerabilities found in audi
 Run with: pytest tests/test_security_gaps.py -v
 """
 
-import asyncio
 import json
-import re
-import pytest
-from unittest.mock import patch, AsyncMock, MagicMock
+import os
 
 # We need to test the actual code; import after ensuring path is set
 import sys
-import os
+
+import pytest
+
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
 os.environ.setdefault("MOCK_BACKEND", "1")
 
-from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest
-from satgateway.middleware import PaymentGateway, require_payment, init_gateway
-
+from satgateway.core import GatewayConfig, MockBackend, SatGateway
 
 # ---------------------------------------------------------------------------
 # F-01: Cross-resource payment reuse — any paid payment accesses any endpoint
@@ -488,7 +485,7 @@ class TestAmountNotVerified:
         The actual paid amount is never compared.
         """
         # Create a 100-sat payment
-        req = await gateway.create_request(
+        await gateway.create_request(
             amount_sats=100,
             description="Test",
             resource_url="/"
@@ -559,7 +556,7 @@ class TestFullPaymentBypassChain:
         # this specific resource or amount.
 
         # Create what should be an expensive payment
-        expensive_req = await gateway.create_request(
+        await gateway.create_request(
             amount_sats=10000,
             description="Expensive resource",
             resource_url="/api/expensive"

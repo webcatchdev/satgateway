@@ -1,21 +1,20 @@
 """FastAPI middleware and decorators for SatGateway."""
 
-import os
 import base64
+import hmac
 import html
 import json
-import hmac
+import os
 import time
 from functools import wraps
-from typing import Optional, Callable, Any
+from typing import Callable, Optional
 from urllib.parse import urlparse
 
-from fastapi import Request, HTTPException, Depends, Header
-from fastapi.responses import JSONResponse, HTMLResponse
-from pydantic import BaseModel, constr, conint, field_validator
+from fastapi import Depends, Header, HTTPException, Request
+from fastapi.responses import HTMLResponse, JSONResponse
+from pydantic import BaseModel, conint, constr, field_validator
 
-from .core import SatGateway, PaymentRequest, GatewayConfig, MockBackend
-
+from .core import GatewayConfig, MockBackend, SatGateway
 
 # ---------------------------------------------------------------------------
 # Simple in-memory rate limiter (NEW-06)
@@ -294,8 +293,9 @@ class PaymentGateway:
             if not payment:
                 raise HTTPException(status_code=404, detail="Payment not found")
 
-            import qrcode
             import io
+
+            import qrcode
             qr = qrcode.make(payment.invoice)
             buf = io.BytesIO()
             qr.save(buf, format="PNG")

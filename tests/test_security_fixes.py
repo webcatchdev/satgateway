@@ -4,10 +4,9 @@ Run with: pytest tests/test_security_fixes.py -v
 """
 
 import asyncio
-import json
 import os
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, timezone
 
 import pytest
 from fastapi import FastAPI, Request
@@ -16,8 +15,13 @@ from fastapi.testclient import TestClient
 sys.path.insert(0, os.path.expanduser("~/satgateway"))
 os.environ.setdefault("MOCK_BACKEND", "1")
 
-from satgateway.core import SatGateway, GatewayConfig, MockBackend, PaymentRequest
-from satgateway.middleware import require_payment, PaymentGateway, init_gateway, _default_gateway
+from satgateway.core import GatewayConfig, MockBackend, SatGateway
+from satgateway.middleware import (
+    PaymentGateway,
+    _default_gateway,
+    init_gateway,
+    require_payment,
+)
 
 # Ensure a fresh default gateway for every test module load
 init_gateway(
