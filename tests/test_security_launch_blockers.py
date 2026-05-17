@@ -14,7 +14,7 @@ import pytest
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
 
-sys.path.insert(0, os.path.expanduser("~/satgateway"))
+sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
 os.environ.setdefault("MOCK_BACKEND", "1")
 
 from satgateway.core import (
