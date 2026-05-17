@@ -1,10 +1,56 @@
+# Python
 __pycache__/
-*.pyc
-.env
-*.egg-info/
-dist/
+*.py[cod]
+*$py.class
+*.so
+.Python
 build/
-*.db
-*.sqlite
-*.sqlite3
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv
+venv/
+env/
+ENV/
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Environment
+.env
+.env.local
+
+# Bitcoin / LND data (never commit!)
+bitcoin-data/
+lnd-data/
+*.macaroon
+tls.cert
+tls.key
+
+# Logs
+*.log
+server.log
+
+# OS
 .DS_Store

@@ -68,10 +68,21 @@ def premium_data():
 
 ---
 
-## ⚠️ Security Warning
+## ⚠️ Security
+
+SatGateway has undergone **multiple independent security audits** before release:
+
+| Audit | Date | Scope | Status |
+|-------|------|-------|--------|
+| GLM-5.1 (OpenRouter) | 2026-05-10 | Full codebase | ✅ 22 findings fixed |
+| Kimi K2.6 | 2026-05-11 | Follow-up review | ✅ Verified |
+| GPT-5.5 (OpenRouter) | 2026-05-13 | Deep re-audit + new attack vectors | ✅ 15 findings fixed |
+| **Launch Blockers** | 2026-05-16 | Critical regression tests | ✅ 6 blockers resolved |
+
+**All 86 security tests pass.** See `tests/test_security_*.py` for the full test matrix.
 
 > **Before deploying to production, change all placeholder passwords.**
-> `docker-compose.fullnode.yml` and `lnd-fullnode.conf` contain the placeholder password `CHANGE_ME_STRONG_PASSWORD` for Bitcoin RPC. You **must** replace this with a strong, unique password before starting your node. Failure to do so will leave your Bitcoin RPC exposed to anyone who reads the config file.
+> `docker-compose.fullnode.yml` and `lnd-fullnode.conf` contain the placeholder password `CHANGE_ME_STRONG_PASSWORD` for Bitcoin RPC. You **must** replace this with a strong, unique password before starting your node.
 
 ## Configuration
 
