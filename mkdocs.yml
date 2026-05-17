@@ -1,5 +1,5 @@
 site_name: SatGateway
-site_url: https://bellum19.github.io/satgateway
+site_url: https://webcatchdev.github.io/satgateway
 site_description: Bitcoin Lightning payments for websites and APIs
 theme:
   name: material

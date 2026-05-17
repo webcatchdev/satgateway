@@ -158,7 +158,7 @@ def home():
         <h1>⚡ SatGateway</h1>
         <p class="tagline">Bitcoin Lightning payments for websites & APIs.<br>Two lines of code. Sub-penny fees. No accounts.</p>
         <a class="cta" href="#demo">Try Demo</a>
-        <a class="cta secondary" href="https://github.com/bellum19/satgateway">GitHub</a>
+        <a class="cta secondary" href="https://github.com/webcatchdev/satgateway">GitHub</a>
     </div>
 
     <div class="features">
@@ -190,7 +190,7 @@ def home():
     </div>
 
     <footer>
-        Built with ⚡ by <a href="https://github.com/bellum19" style="color:#F7931A;">@bellum19</a> · MIT License
+        Built with ⚡ by <a href="https://github.com/webcatchdev" style="color:#F7931A;">@webcatchdev</a> · MIT License
     </footer>
 </body>
 </html>"""

@@ -10,7 +10,7 @@ readme = "README.md"
 license = {text = "MIT"}
 requires-python = ">=3.10"
 authors = [
-    {name = "bellum19", email = "security@satgateway.local"}
+    {name = "webcatchdev", email = "security@satgateway.local"}
 ]
 keywords = [
     "bitcoin",
@@ -52,11 +52,11 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/bellum19/satgateway"
-Documentation = "https://bellum19.github.io/satgateway"
-Repository = "https://github.com/bellum19/satgateway"
-Issues = "https://github.com/bellum19/satgateway/issues"
-Changelog = "https://github.com/bellum19/satgateway/blob/main/CHANGELOG.md"
+Homepage = "https://github.com/webcatchdev/satgateway"
+Documentation = "https://webcatchdev.github.io/satgateway"
+Repository = "https://github.com/webcatchdev/satgateway"
+Issues = "https://github.com/webcatchdev/satgateway/issues"
+Changelog = "https://github.com/webcatchdev/satgateway/blob/main/CHANGELOG.md"
 
 [tool.hatch.build.targets.wheel]
 packages = ["satgateway"]

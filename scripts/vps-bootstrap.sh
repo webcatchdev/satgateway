@@ -46,7 +46,7 @@ ufw --force enable
 mkdir -p /opt/satgateway
 cd /opt/satgateway
 if [ ! -d ".git" ]; then
-    git clone https://github.com/bellum19/satgateway.git . 2>/dev/null || echo "Please clone your repo manually to /opt/satgateway"
+    git clone https://github.com/webcatchdev/satgateway.git . 2>/dev/null || echo "Please clone your repo manually to /opt/satgateway"
 fi
 
 # Create data dirs

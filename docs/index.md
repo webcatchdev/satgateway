@@ -18,7 +18,7 @@ SatGateway makes it trivial.
 
 ## Quick Links
 
-- [GitHub Repository](https://github.com/bellum19/satgateway)
+- [GitHub Repository](https://github.com/webcatchdev/satgateway)
 - [PyPI Package](https://pypi.org/project/satgateway/)
-- [Docker Hub](https://hub.docker.com/r/bellum19/satgateway)
-- [Report an Issue](https://github.com/bellum19/satgateway/issues)
+- [Docker Hub](https://hub.docker.com/r/webcatchdev/satgateway)
+- [Report an Issue](https://github.com/webcatchdev/satgateway/issues)

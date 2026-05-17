@@ -65,7 +65,7 @@ async def mega_article(request: Request):
     return {
         "title": "How We Built SatGateway in a Weekend",
         "content": "It started with a simple idea: what if HTTP 402 wasn't a joke? What if every website could charge per view? ...",
-        "author": "bellum19",
+        "author": "webcatchdev",
         "word_count": 1337,
         "bonus": "Secret API key: SG-MEGA-SECRET-12345"
     }
