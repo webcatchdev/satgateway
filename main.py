@@ -37,14 +37,11 @@ async def lifespan(app: FastAPI):
         raise RuntimeError("SATGATEWAY_KEY environment variable must be set")
 
     if os.getenv("LND_HOST"):
-        # Respect LND_VERIFY_TLS env var; default True for production
-        verify_tls = os.getenv("LND_VERIFY_TLS", "true").lower() not in ("false", "0", "no", "off")
         backend = LndBackend(
             host=os.getenv("LND_HOST"),
             macaroon_hex=os.getenv("LND_MACAROON") or None,
             macaroon_path=os.getenv("LND_MACAROON_PATH"),
             cert_path=os.getenv("LND_TLS_CERT_PATH"),
-            verify_tls=verify_tls,
         )
     else:
         backend = MockBackend()
