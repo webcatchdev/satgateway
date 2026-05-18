@@ -7,8 +7,8 @@ import os
 import json
 import sqlite3
 import threading
-from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from datetime import datetime
+from typing import Optional
 
 from .core import PaymentRequest
 

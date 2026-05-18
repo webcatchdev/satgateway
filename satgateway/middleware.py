@@ -8,12 +8,12 @@ import json
 import base64
 import secrets
 from functools import wraps
-from typing import Optional, Callable, Any
+from typing import Optional, Callable
 
 from fastapi import Request, HTTPException, Header, Depends
 from fastapi.responses import JSONResponse, HTMLResponse
 
-from .core import SatGateway, PaymentRequest, GatewayConfig, MockBackend
+from .core import SatGateway, GatewayConfig, MockBackend
 from .ratelimit import RateLimiter
 
 # ---------------------------------------------------------------------------
@@ -319,8 +319,6 @@ class PaymentGateway:
             safe_id = html.escape(payment.id)
             safe_invoice = html.escape(payment.invoice)
             safe_amount = payment.amount_sats
-            safe_url = html.escape(payment.resource_url or "/")
-            safe_csrf = html.escape(csrf)
             js_invoice = json.dumps(payment.invoice)
             js_url = json.dumps(payment.resource_url or "/")
             js_csrf = json.dumps(csrf)

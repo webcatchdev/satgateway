@@ -1,10 +1,8 @@
 """Core payment engine for SatGateway."""
 
 import os
-import json
 import uuid
 import hashlib
-import asyncio
 from datetime import datetime, timedelta, timezone
 from typing import Optional, Callable, Dict, Any
 from dataclasses import dataclass, field
