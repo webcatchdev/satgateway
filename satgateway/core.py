@@ -159,7 +159,7 @@ class LndBackend(LightningBackend):
         import aiohttp
         import base64
         # LND REST expects base64-encoded payment hash in URL
-        ph_b64 = base64.b64encode(bytes.fromhex(payment_hash)).decode()
+        ph_b64 = base64.urlsafe_b64encode(bytes.fromhex(payment_hash)).decode()
         url = f"{self.host}/v1/invoice/{ph_b64}"
         async with aiohttp.ClientSession() as session:
             async with session.get(url, headers=self._headers, ssl=self._ssl) as resp:

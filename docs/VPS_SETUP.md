@@ -159,6 +159,9 @@ curl https://your-vps-ip:9026/api/status
 Use this when you're doing serious volume and want zero trust.
 
 **docker-compose.fullnode.yml**
+
+> ⚠️ **Security:** `CHANGE_ME_STRONG_PASSWORD` is a placeholder. Replace it with a strong, unique password before deploying. Never use the placeholder in production.
+
 ```yaml
 version: "3.8"
 
@@ -219,6 +222,9 @@ services:
 ```
 
 **lnd-fullnode.conf**
+
+> ⚠️ **Security:** `CHANGE_ME_STRONG_PASSWORD` is a placeholder. Replace it with a strong, unique password before deploying.
+
 ```ini
 [Application Options]
 listen=0.0.0.0:9735

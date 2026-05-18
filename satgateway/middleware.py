@@ -197,6 +197,7 @@ def require_payment(
                     "verify_url": f"/payments/verify/{req.id}"
                 },
                 headers={
+                    "Cache-Control": "no-store, no-cache, must-revalidate, private",
                     "PAYMENT-REQUIRED": base64.b64encode(json.dumps({
                         "scheme": "exact",
                         "network": "lightning",
@@ -272,7 +273,11 @@ class PaymentGateway:
         @self.router.get("/verify/{payment_id}")
         async def verify_payment(payment_id: str):
             _validate_uuid(payment_id)
-            return await self.gateway.check_payment(payment_id)
+            result = await self.gateway.check_payment(payment_id)
+            return JSONResponse(
+                content=result,
+                headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"}
+            )
 
         # ------------------------------------------------------------------
         # GET /qr/{payment_id}
@@ -291,7 +296,8 @@ class PaymentGateway:
             qr.save(buf, format="PNG")
             buf.seek(0)
             from fastapi.responses import StreamingResponse
-            return StreamingResponse(buf, media_type="image/png")
+            return StreamingResponse(buf, media_type="image/png",
+                                     headers={"Cache-Control": "no-store, no-cache, must-revalidate, private"})
 
         # ------------------------------------------------------------------
         # GET /paywall/{payment_id}  — CSRF token injected
@@ -324,6 +330,7 @@ class PaymentGateway:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, private">
     <title>Payment Required</title>
     <style>
         body {{ font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #0d1117; color: #c9d1d9; display: flex; justify-content: center; align-items: center; min-height: 100vh; margin: 0; }}
