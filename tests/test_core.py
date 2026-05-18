@@ -5,8 +5,9 @@ from datetime import datetime, timezone, timedelta
 
 from satgateway.core import (
     MockBackend, GatewayConfig, SatGateway,
-    PaymentRequest, PaymentStore
+    PaymentRequest,
 )
+from satgateway.store import PaymentStore
 
 
 class TestMockBackend:
