@@ -9,7 +9,6 @@ Tests closing the four remaining security gaps:
 
 import os
 import sys
-import json
 import time
 import asyncio
 import tempfile

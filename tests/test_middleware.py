@@ -1,6 +1,5 @@
 """Tests for FastAPI middleware and decorators."""
 
-import pytest
 from datetime import datetime, timezone, timedelta
 
 
@@ -42,7 +41,6 @@ class TestRequirePaymentDecorator:
     def test_paid_request_succeeds(self, client, app):
         """After mock auto-pay, valid payment should unlock route."""
         from satgateway.middleware import _default_gateway
-        from satgateway.core import MockBackend
 
         r1 = client.get("/payments/api/secret")
         assert r1.status_code == 402
