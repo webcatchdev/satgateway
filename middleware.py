@@ -33,23 +33,12 @@ def _get_rate_limiter() -> RateLimiter:
 # Auth helpers
 # ---------------------------------------------------------------------------
 
-def _resolve_api_key() -> str:
-    """Return the configured API key, or raise if not explicitly set."""
-    key = os.getenv("SATGATEWAY_KEY")
-    if not key:
-        raise RuntimeError(
-            "SATGATEWAY_KEY environment variable is required and must be non-empty. "
-            "Set it to a secure random string before starting the gateway."
-        )
-    return key
-
-
 async def _require_api_key(
     x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
     authorization: Optional[str] = Header(None),
 ):
     """Dependency that validates the SatGateway API key."""
-    expected = _resolve_api_key()
+    expected = os.getenv("SATGATEWAY_KEY", "dev")
     provided = x_api_key
     if not provided and authorization:
         if authorization.lower().startswith("bearer "):
@@ -78,25 +67,10 @@ def _validate_uuid(payment_id: str) -> str:
     return payment_id
 
 
-def _validate_resource_url(url: str) -> str:
-    """Allow only http, https, and relative URLs. Block javascript:, data:, etc."""
-    if not url:
-        return url
-    from urllib.parse import urlparse
-    parsed = urlparse(url)
-    if parsed.scheme and parsed.scheme.lower() not in ("http", "https"):
-        raise HTTPException(
-            status_code=400,
-            detail=f"Invalid resource_url scheme: '{parsed.scheme}'. Only http, https, or relative URLs are allowed."
-        )
-    return url
-
-
 def _clamp_invoice_input(body: dict) -> dict:
     """Clamp and sanitize invoice creation input."""
     desc = str(body.get("description", "Service access"))[:_MAX_DESCRIPTION]
     url = str(body.get("resource_url", ""))[:_MAX_RESOURCE_URL]
-    url = _validate_resource_url(url)
     metadata = body.get("metadata")
     if metadata is not None:
         meta_str = json.dumps(metadata)
@@ -207,9 +181,7 @@ def require_payment(
                     }).encode()).decode()
                 }
             )
-            # secure=True requires HTTPS; allow HTTP override for local dev
-            cookie_secure = os.getenv("SATGATEWAY_COOKIE_SECURE", "1") != "0"
-            response.set_cookie(key="sg_payment_id", value=req.id, max_age=3600, httponly=True, samesite="Lax", secure=cookie_secure)
+            response.set_cookie(key="sg_payment_id", value=req.id, max_age=3600, httponly=True, samesite="Lax")
             return response
 
         return wrapper
@@ -305,8 +277,7 @@ class PaymentGateway:
 
             csrf = _generate_csrf()
             # Store CSRF token in DB so we can validate later
-            # Use update_csrf to avoid overwriting consumed flag (anti double-spend)
-            self.gateway._store.update_csrf(payment.id, csrf)
+            self.gateway._store.save(payment, csrf_token=csrf)
 
             # Safely embed values — html.escape for HTML context,
             # json.dumps for JS string context
@@ -459,7 +430,7 @@ def _default_gateway() -> SatGateway:
     if _default_gw is None:
         _default_gw = SatGateway(
             backend=MockBackend(),
-            config=GatewayConfig(api_key=_resolve_api_key()),
+            config=GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev"))
         )
     return _default_gw
 
@@ -469,7 +440,7 @@ def init_gateway(backend=None, config=None, store=None):
     global _default_gw
     _default_gw = SatGateway(
         backend=backend or MockBackend(),
-        config=config or GatewayConfig(api_key=_resolve_api_key()),
+        config=config or GatewayConfig(api_key=os.getenv("SATGATEWAY_KEY", "dev")),
         store=store,
     )
     return _default_gw

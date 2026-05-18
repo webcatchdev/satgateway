@@ -13,12 +13,6 @@ your-domain.com {
         try_files {path} /index.html
     }
 
-    # Static assets (paywall.js, etc.)
-    handle /static/* {
-        root * /opt/satgateway/static
-        file_server
-    }
-
     # SatGateway API — preserve /payments prefix for FastAPI router
     handle /payments/* {
         reverse_proxy localhost:9026

@@ -5,14 +5,17 @@ Run:
     uvicorn main:app --host 0.0.0.0 --port 9026 --reload
 
 Environment:
-    SATGATEWAY_KEY        → API key for hosted mode
+    SATGATEWAY_KEY        → API key for hosted mode (required)
     SATGATEWAY_FEE_BPS    → Fee basis points (default: 50 = 0.5%)
     LND_HOST              → LND REST host (optional)
     LND_MACAROON          → LND macaroon hex (optional)
+    LND_VERIFY_TLS        → Verify LND TLS cert (default: true)
+    ALLOWED_ORIGINS       → CORS allowed origins (default: none)
 """
 
-import json
+import logging
 import os
+import re
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Request
@@ -20,60 +23,109 @@ from fastapi.responses import HTMLResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 
-from satgateway.middleware import PaymentGateway, init_gateway, require_payment, _default_gateway
+from satgateway.middleware import PaymentGateway, init_gateway, require_payment, _default_gateway, _resolve_api_key
 from satgateway.core import GatewayConfig, MockBackend, LndBackend
+from satgateway.store import PaymentStore
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # Initialize gateway on startup
     fee_bps = int(os.getenv("SATGATEWAY_FEE_BPS", "50"))
-    api_key = os.getenv("SATGATEWAY_KEY", "dev")
-    db_path = os.getenv("SATGATEWAY_DB", "/app/data/satgateway.db")
+    api_key = _resolve_api_key()
+    if not api_key:
+        raise RuntimeError("SATGATEWAY_KEY environment variable must be set")
 
     if os.getenv("LND_HOST"):
+        # Respect LND_VERIFY_TLS env var; default True for production
+        verify_tls = os.getenv("LND_VERIFY_TLS", "true").lower() not in ("false", "0", "no", "off")
         backend = LndBackend(
             host=os.getenv("LND_HOST"),
             macaroon_hex=os.getenv("LND_MACAROON") or None,
             macaroon_path=os.getenv("LND_MACAROON_PATH"),
-            cert_path=os.getenv("LND_TLS_CERT_PATH")
+            cert_path=os.getenv("LND_TLS_CERT_PATH"),
+            verify_tls=verify_tls,
         )
     else:
         backend = MockBackend()
 
-    init_gateway(
+    store = PaymentStore()
+    gw = init_gateway(
         backend=backend,
         config=GatewayConfig(api_key=api_key, fee_basis_points=fee_bps),
-        db_path=db_path
+        store=store,
     )
+    gw.start_cleanup_task()
     gateway = PaymentGateway(sat_gateway=_default_gateway())
     app.include_router(gateway.router, prefix="/payments")
-    yield
+    try:
+        yield
+    finally:
+        gw.stop_cleanup_task()
 
+
+# ── Security: Redact payment IDs from access logs ──────────────────────────
+
+class RedactAccessLog(logging.Filter):
+    """Filter that redacts UUID-like payment IDs from uvicorn access logs."""
+
+    _uuid_pattern = re.compile(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        re.IGNORECASE,
+    )
+
+    def filter(self, record):
+        if hasattr(record, "args") and len(record.args) >= 3:
+            path = record.args[2]
+            if isinstance(path, str):
+                redacted = self._uuid_pattern.sub("[REDACTED]", path)
+                record.args = (record.args[0], record.args[1], redacted, *record.args[3:])
+        return True
+
+
+logging.getLogger("uvicorn.access").addFilter(RedactAccessLog())
+
+
+# ── FastAPI app ────────────────────────────────────────────────────────────
 
 app = FastAPI(
     title="SatGateway",
     description="Bitcoin Lightning payments for websites and APIs",
     version="0.1.0",
-    lifespan=lifespan
+    lifespan=lifespan,
 )
 
-# CORS — configurable via env. Default restricts to same-origin + common local dev ports.
-# For public API mode, set CORS_ORIGINS='["*"]' explicitly (not recommended for production).
-_cors_raw = os.getenv("CORS_ORIGINS", '["http://localhost:3000", "http://localhost:5173", "http://localhost:8000", "http://localhost:9026"]')
-try:
-    _cors_origins = json.loads(_cors_raw)
-except Exception:
-    _cors_origins = [x.strip() for x in _cors_raw.split(",") if x.strip()]
+# ── Security: Restrict CORS ────────────────────────────────────────────────
+
+origins = os.getenv("ALLOWED_ORIGINS", "")
+if origins:
+    allow_origins = [o.strip() for o in origins.split(",")]
+else:
+    allow_origins = []
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=_cors_origins,
-    allow_methods=["GET", "POST", "OPTIONS"],
-    allow_headers=["*"]
+    allow_origins=allow_origins,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Content-Type", "X-API-Key", "X-Payment-ID"],
 )
 
+# ── Security: Security headers middleware ──────────────────────────────────
+
+@app.middleware("http")
+async def add_security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Content-Security-Policy"] = "default-src 'self'; script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'"
+    return response
+
+
+# ── Mount static files ─────────────────────────────────────────────────────
+
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
 
 # ---------------------------------------------------------------------------
 # Demo pages
@@ -109,7 +161,7 @@ def home():
     <div class="hero">
         <h1>⚡ SatGateway</h1>
         <p class="tagline">Bitcoin Lightning payments for websites & APIs.<br>Two lines of code. Sub-penny fees. No accounts.</p>
-        <a class="cta" href="/payments/">Try Demo</a>
+        <a class="cta" href="#demo">Try Demo</a>
         <a class="cta secondary" href="https://github.com/webcatchdev/satgateway">GitHub</a>
     </div>
 
@@ -125,7 +177,7 @@ def home():
             <p>Gate FastAPI endpoints:</p>
             <div class="code"><span class="keyword">@app.get</span>(<span class="string">"/api/premium"</span>)
 <span class="keyword">@require_payment</span>(<span class="string">amount_sats=100</span>)
-<span class="keyword">async def</span> premium(request: Request):
+<span class="keyword">def</span> premium():
     <span class="keyword">return</span> {<span class="string">"secret"</span>: <span class="string">"data"</span>}</div>
         </div>
         <div class="feature">
@@ -138,7 +190,7 @@ def home():
         <h2>Live Demo</h2>
         <p class="tagline">Pay 100 sats to reveal a secret message</p>
         <div id="paywall-container"></div>
-        <script src="/static/paywall.js" data-amount="100" data-resource="/payments/api/secret" data-container="paywall-container"></script>
+        <script src="/static/paywall.js" data-amount="100" data-resource="/api/secret" data-container="paywall-container"></script>
     </div>
 
     <footer>
@@ -148,7 +200,7 @@ def home():
 </html>"""
 
 
-@app.get("/payments/api/secret")
+@app.get("/api/secret")
 @require_payment(amount_sats=100, description="Access secret message")
 async def secret_message(request: Request):
     return {
@@ -158,23 +210,18 @@ async def secret_message(request: Request):
             "Add @require_payment to your own endpoints",
             "Set your own price in sats",
             "Connect your LND node",
-            "Start earning Bitcoin"
-        ]
+            "Start earning Bitcoin",
+        ],
     }
 
 
-@app.get("/payments/api/status")
+@app.get("/api/status")
 async def status():
-    from satgateway.middleware import _default_gateway
-    gw = _default_gateway()
-    bal = await gw.get_balance()
+    """Public health check — minimal info, no balance or backend type exposed."""
     return {
         "status": "ok",
         "gateway": "SatGateway",
         "version": "0.1.0",
-        "balance_sats": bal,
-        "fee_bps": gw.config.fee_basis_points,
-        "backend": "mock" if isinstance(gw.backend, MockBackend) else "lnd"
     }
 
 

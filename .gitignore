@@ -21,3 +21,6 @@ deposit.log
 
 # Keep examples clean
 *.local
+.wallet_pass
+AUDIT_*.md
+server.log

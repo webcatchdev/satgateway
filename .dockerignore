@@ -9,7 +9,6 @@ build/
 *.sqlite
 *.sqlite3
 .DS_Store
-.git/
 
 # Secrets (never bake into image)
 *.macaroon

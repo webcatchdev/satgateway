@@ -1,12 +1,14 @@
+version: "3.8"
+
 services:
   lnd:
     image: lightninglabs/lnd:v0.18.0-beta
     container_name: lnd
     restart: unless-stopped
     ports:
-      - 9735:9735
-      - 127.0.0.1:10009:10009
-      - 127.0.0.1:8080:8080
+      - "9735:9735"
+      - "127.0.0.1:10009:10009"
+      - "127.0.0.1:8080:8080"
     volumes:
       - ./lnd-neutrino.conf:/root/.lnd/lnd.conf
       - lnd-data:/root/.lnd
@@ -16,26 +18,33 @@ services:
       --configfile=/root/.lnd/lnd.conf
       --feeurl=https://nodes.lightning.computer/fees/v1/btc-fee-estimates.json
       --wallet-unlock-password-file=/root/.lnd/.wallet_pass
+    networks:
+      - satgateway
 
   satgateway:
     build: .
     container_name: satgateway
     restart: unless-stopped
     ports:
-      - 127.0.0.1:9026:9026
+      - "9026:9026"
     environment:
       - SATGATEWAY_KEY=${SATGATEWAY_KEY:-dev}
-      - SATGATEWAY_FEE_BPS=${SATGATEWAY_FEE_BPS:-50}
-      - SATGATEWAY_DB=/app/data/satgateway.db
-      - REDIS_HOST=redis
+      - SATGATEWAY_FEE_BPS=50
+      - SATGATEWAY_COOKIE_SECURE=0
       - LND_HOST=https://lnd:8080
       - LND_MACAROON_PATH=/app/admin.macaroon
+      - LND_TLS_SKIP_VERIFY=1
+      - REDIS_URL=redis://redis:6379/0
     volumes:
-      - /opt/satgateway-secrets/lnd/admin.macaroon:/app/admin.macaroon:ro
       - ./data:/app/data
       - ./static:/app/static
+      - /opt/satgateway-secrets/lnd/admin.macaroon:/app/admin.macaroon:ro
+      - /opt/satgateway-secrets/lnd/tls.cert:/app/tls.cert:ro
     depends_on:
       - lnd
+      - redis
+    networks:
+      - satgateway
 
   redis:
     image: redis:7-alpine
@@ -43,7 +52,13 @@ services:
     restart: unless-stopped
     volumes:
       - redis-data:/data
+    networks:
+      - satgateway
 
 volumes:
   lnd-data:
   redis-data:
+
+networks:
+  satgateway:
+
