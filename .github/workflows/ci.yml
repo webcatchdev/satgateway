@@ -21,6 +21,9 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
+          echo "=== Ruff check ==="
+          python -m pip show ruff 2>&1 || echo "ruff NOT INSTALLED via pip!"
+          which ruff || echo "ruff binary not in PATH"
       - name: Lint
         run: |
           ruff --version || python -m ruff --version || echo "ruff not found!"
