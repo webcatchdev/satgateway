@@ -22,7 +22,9 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e ".[dev]"
       - name: Lint
-        run: ruff check satgateway/ tests/
+        run: |
+          ruff --version || python -m ruff --version || echo "ruff not found!"
+          python -m ruff check satgateway/ tests/
       # Tests pass locally (86/86) but need CI env debug.
       # Re-enable after fixing: https://github.com/webcatchdev/satgateway/issues/1
       # - name: Test
