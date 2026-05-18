@@ -52,13 +52,11 @@ async def lifespan(app: FastAPI):
         config=GatewayConfig(api_key=api_key, fee_basis_points=fee_bps),
         store=store,
     )
-    gw.start_cleanup_task()
     gateway = PaymentGateway(sat_gateway=_default_gateway())
     app.include_router(gateway.router, prefix="/payments")
     try:
         yield
     finally:
-        gw.stop_cleanup_task()
 
 
 # ── Security: Redact payment IDs from access logs ──────────────────────────
