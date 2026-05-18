@@ -54,9 +54,7 @@ async def lifespan(app: FastAPI):
     )
     gateway = PaymentGateway(sat_gateway=_default_gateway())
     app.include_router(gateway.router, prefix="/payments")
-    try:
-        yield
-    finally:
+    yield
 
 
 # ── Security: Redact payment IDs from access logs ──────────────────────────
